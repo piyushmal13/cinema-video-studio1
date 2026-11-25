@@ -1,0 +1,34 @@
+{
+  "name": "cinema-autonomous-video-studio",
+  "version": "3.0.0",
+  "description": "Cinema-Grade Phone-to-Telegram Autonomous AI Film, B-Roll, 3D WebGL, Procedural SFX & Motion Graphics Studio",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "skills:install": "npx skills add remotion-dev/skills -y || npx remotion skills add",
+    "build": "remotion render src/index.ts MainComp out/final.mp4 --gl=swangle --crf=18",
+    "build:landscape": "remotion render src/index.ts LandscapeComp out/final_16x9.mp4 --gl=swangle --crf=18"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.114.3",
+    "@react-three/fiber": "^8.17.10",
+    "@remotion/cli": "4.0.546",
+    "@remotion/media-utils": "4.0.546",
+    "@remotion/motion-blur": "4.0.546",
+    "@remotion/noise": "4.0.546",
+    "@remotion/shapes": "4.0.546",
+    "@remotion/sfx": "4.0.546",
+    "@remotion/three": "4.0.546",
+    "@remotion/transitions": "4.0.546",
+    "lucide-react": "^0.460.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.546",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@types/three": "^0.169.0",
+    "typescript": "^5.6.3"
+  }
+}

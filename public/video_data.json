@@ -1,0 +1,84 @@
+{
+  "title": "Cinema AI Studio Preview",
+  "brandTag": "IFXTRADES",
+  "themeColor": "#D4AF37",
+  "mode": "cinema",
+  "totalDurationSec": 12.0,
+  "scenes": [
+    {
+      "type": "cinema_hero",
+      "startSec": 0.0,
+      "endSec": 3.5,
+      "kicker": "QUANTUM INTELLIGENCE",
+      "headline": "The Invisible Engine Moving Global Markets",
+      "subline": "Inside the algorithms executing billions in milliseconds",
+      "cameraMotion": "dolly_push",
+      "sfxCue": "boom"
+    },
+    {
+      "type": "three_d_globe",
+      "startSec": 3.5,
+      "endSec": 6.5,
+      "kicker": "LIQUIDITY TOPOLOGY",
+      "headline": "Every Stop Order Leaves A Digital Footprint",
+      "cameraMotion": "zoom_in",
+      "sfxCue": "whoosh"
+    },
+    {
+      "type": "candlestick_chart",
+      "startSec": 6.5,
+      "endSec": 9.2,
+      "kicker": "INSTITUTIONAL EXECUTION",
+      "headline": "Sweep First. Reprice Second.",
+      "cameraMotion": "pan_right",
+      "sfxCue": "pulse"
+    },
+    {
+      "type": "cinema_outro",
+      "startSec": 9.2,
+      "endSec": 12.0,
+      "kicker": "IFXTRADES",
+      "headline": "Trade With Institutional Precision",
+      "subline": "Automated intelligence built for modern markets",
+      "cameraMotion": "zoom_out",
+      "sfxCue": "boom"
+    }
+  ],
+  "words": [
+    {
+      "word": "Behind",
+      "start": 0.1,
+      "end": 0.5
+    },
+    {
+      "word": "every",
+      "start": 0.5,
+      "end": 0.9
+    },
+    {
+      "word": "market",
+      "start": 0.9,
+      "end": 1.4
+    },
+    {
+      "word": "move",
+      "start": 1.4,
+      "end": 1.9
+    },
+    {
+      "word": "lies",
+      "start": 1.9,
+      "end": 2.3
+    },
+    {
+      "word": "an",
+      "start": 2.3,
+      "end": 2.6
+    },
+    {
+      "word": "algorithm",
+      "start": 2.6,
+      "end": 3.4
+    }
+  ]
+}
