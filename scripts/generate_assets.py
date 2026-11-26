@@ -8,7 +8,6 @@ import requests
 import edge_tts
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-XAI_API_KEY = os.environ.get("XAI_API_KEY", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
 
@@ -138,12 +137,16 @@ Rules:
 
 def clean_json_response(raw_text: str) -> dict:
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text.strip(), flags=re.MULTILINE)
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1:
+        cleaned = cleaned[start : end + 1]
     return json.loads(cleaned)
 
 def generate_storyboard(prompt: str, sys_prompt: str) -> dict:
-    # 1. Primary: Google AI Studio (Gemini)
+    # 1. Primary: Google AI Studio Free Tier (current 2026 models from API error notice)
     if GEMINI_API_KEY:
-        for model_id in ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"]:
+        for model_id in ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={GEMINI_API_KEY}"
                 resp = requests.post(
@@ -164,62 +167,63 @@ def generate_storyboard(prompt: str, sys_prompt: str) -> dict:
             except Exception as e:
                 print(f"Gemini {model_id} error: {e}")
 
-    # 2. Secondary: xAI Grok API
-    if XAI_API_KEY:
-        xai_key = XAI_API_KEY[0].lower() + XAI_API_KEY[1:] if XAI_API_KEY.startswith("Xai-") else XAI_API_KEY
-        for grok_model in ["grok-3-mini", "grok-3", "grok-2-latest"]:
-            try:
-                resp = requests.post(
-                    "https://api.x.ai/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
-                    json={
-                        "model": grok_model,
-                        "messages": [
-                            {"role": "system", "content": sys_prompt},
-                            {"role": "user", "content": prompt},
-                        ],
-                        "temperature": 0.5,
-                        "response_format": {"type": "json_object"},
-                    },
-                    timeout=60,
-                )
-                if resp.status_code == 200:
-                    print(f"Directed with xAI ({grok_model})")
-                    return clean_json_response(resp.json()["choices"][0]["message"]["content"])
-                else:
-                    print(f"xAI {grok_model} status {resp.status_code}: {resp.text[:200]}")
-            except Exception as e:
-                print(f"xAI {grok_model} error: {e}")
-
-    # 3. Optional: Groq Cloud
+    # 2. Optional: Groq Free Tier (if added later)
     if GROQ_API_KEY:
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {"role": "system", "content": sys_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.5,
-                "response_format": {"type": "json_object"},
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        return clean_json_response(resp.json()["choices"][0]["message"]["content"])
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.5,
+                    "response_format": {"type": "json_object"},
+                },
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                print("Directed with Groq Llama 3.3 70B")
+                return clean_json_response(resp.json()["choices"][0]["message"]["content"])
+        except Exception as e:
+            print(f"Groq error: {e}")
 
-    raise RuntimeError("Missing GEMINI_API_KEY or XAI_API_KEY in GitHub Repository Secrets.")
+    # 3. Unlimited $0 Keyless Fallback: Pollinations OpenAI-Compatible Endpoint (zero API key, zero credits)
+    for free_model in ["openai", "deepseek", "mistral"]:
+        try:
+            resp = requests.post(
+                "https://text.pollinations.ai/openai",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": free_model,
+                    "messages": [
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": f"{prompt}\n\nRespond with valid JSON only."},
+                    ],
+                    "temperature": 0.5,
+                },
+                timeout=75,
+            )
+            if resp.status_code == 200:
+                raw_text = resp.json()["choices"][0]["message"]["content"]
+                print(f"Directed with Pollinations Free ({free_model})")
+                return clean_json_response(raw_text)
+        except Exception as e:
+            print(f"Pollinations {free_model} fallback: {e}")
+
+    raise RuntimeError("All AI providers failed to return valid JSON.")
 
 def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
+    # Unlimited $0 Keyless AI Cinema Still via Pollinations Flux
     try:
         w, h = (1280, 720) if orientation == "landscape" else (768, 1344)
         styled_prompt = urllib.parse.quote(
             f"{query}, dark moody cinematic film still, anamorphic lens flare, 8k photorealistic, obsidian and gold lighting"
         )
         img_url = f"https://image.pollinations.ai/prompt/{styled_prompt}?width={w}&height={h}&model=flux&nologo=true&seed={idx+101}"
-        r = requests.get(img_url, timeout=35)
+        r = requests.get(img_url, timeout=40)
         if r.status_code == 200 and len(r.content) > 5000:
             out_path = f"public/media/scene_{idx}.jpg"
             with open(out_path, "wb") as f:
