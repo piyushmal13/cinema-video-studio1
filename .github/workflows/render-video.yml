@@ -36,8 +36,11 @@ jobs:
           pip install -r requirements.txt
           if ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
 
-      - name: Verify Gradio video client
-        run: python -c "import gradio_client, gtts, mutagen; print('video and TTS fallbacks ready')"
+      - name: Verify media and audio tools
+        run: python -c "import auto_editor, gradio_client, gtts, librosa, mutagen, soundfile; print('media and audio dependencies ready')"
+
+      - name: Prepare compact audio vault
+        run: python scripts/setup_real_audio.py
 
       - name: Direct Film, Fetch AI Cinema Visuals, Synthesize Voice & Score
         env:

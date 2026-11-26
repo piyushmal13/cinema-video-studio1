@@ -105,10 +105,8 @@ def build_viral_plan(
         archetype = "phonk"
 
     fast_cuts = archetype in {"phonk", "meme"}
-    scene_count = (
-        max(5, min(24, round(duration_sec / 3)))
-        if fast_cuts
-        else 6
+    scene_count = max(10, min(14, round(duration_sec / 2.7))) if fast_cuts else max(
+        8, min(14, round(duration_sec / 22))
     )
     return ViralPlan(
         archetype=archetype,
@@ -124,8 +122,8 @@ def enhance_story_prompt(prompt: str, plan: ViralPlan) -> str:
     parts = [prompt.strip(), plan.system_instruction]
     if plan.fast_cuts:
         parts.append(
-            f"Aim for approximately {plan.scene_count} scenes with roughly 3-second "
-            "cuts, while keeping the final scene count between 6 and 13. Give every "
+            f"Aim for approximately {plan.scene_count} scenes with roughly 2.5-second "
+            "cuts, while keeping the final scene count between 10 and 14. Give every "
             "scene a distinct purpose, headline, and visual query. Keep the narration complete."
         )
     if plan.trending_context:

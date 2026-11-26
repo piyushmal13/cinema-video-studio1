@@ -1,5 +1,5 @@
 import React from 'react';
-import { Composition } from 'remotion';
+import { Composition, type AnyZodObject } from 'remotion';
 import { MainVideo } from './MainVideo';
 import { VideoProps } from './types';
 import videoData from '../public/video_data.json';
@@ -11,7 +11,7 @@ export const RemotionRoot: React.FC = () => {
 
   return (
     <>
-      <Composition
+      <Composition<AnyZodObject, VideoProps>
         id="MainComp"
         component={MainVideo}
         durationInFrames={durationInFrames}
@@ -20,7 +20,7 @@ export const RemotionRoot: React.FC = () => {
         height={1920}
         defaultProps={{ ...props, isLandscape: false }}
       />
-      <Composition
+      <Composition<AnyZodObject, VideoProps>
         id="LandscapeComp"
         component={MainVideo}
         durationInFrames={durationInFrames}

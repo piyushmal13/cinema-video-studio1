@@ -3,12 +3,14 @@
 Turn a Telegram idea, story, or supplied script into a narrated, captioned MP4:
 
 - Natural-language requests select vertical or widescreen format, runtime, Hindi/Hinglish or English narration, and male/female voice.
-- The director builds a complete narration and scene plan: 5–7 scenes for cinema, or 5–24 fast-cut scenes for short-form; supplied scripts keep their key facts and meaning.
+- The intent router sends short prompts to a 9:16 reel and documentary or detailed prompts to a 16:9 film. Long-form requests are bounded to 2–5 minutes, with public Google News and DuckDuckGo results treated only as research leads.
+- The director builds a complete narration and scene plan: 10–14 scenes for fast reels and 8–14 scenes for documentaries; supplied scripts keep their key facts and meaning.
 - Edge TTS tries language-matched neural voices first; if they fail, keyless gTTS supplies speech and timestamps are estimated from the MP3 duration. FFmpeg creates an original ambient score and scene-transition effects without paid audio APIs.
-- Pollinations generates topic-specific images without an API key; cinematic gradients and procedural 3D scenes keep renders working when image generation is unavailable.
+- A compact `assets/audio/` vault supplies warm phonk/cinema music and transition effects. The pipeline trims voiceover pauses, detects beats, ducks music under narration, and masters the result before rendering.
+- High-impact scenes try keyless AI video; keyless Archive.org and Wikimedia Commons searches accept only explicitly public-domain/CC0 footage or photos. Pollinations Flux uses topic-locked photorealistic prompts, and procedural 3D scenes remain available when providers are unavailable.
 - The animated XAUUSD chart is illustrative, not a live quote feed. Image resolution depends on provider support and is not guaranteed to be 8K.
 - Short-form prompts use fast viral pacing and phonk-style procedural scoring by default. `--meme`, `--movie`/`--cinema`, `--hinglish`, and `--trending` select alternate treatments or optional Google Trends context.
-- High-impact scenes try a keyless video endpoint and then the public LTX ZeroGPU Gradio Space within one combined 45-second attempt. Clips are accepted only when they pass MP4 validation; Flux, public-domain/CC0 Wikimedia photography, and procedural motion remain fallbacks.
+- High-impact scenes try a keyless video endpoint and then a public ZeroGPU Gradio Space within one combined 45-second attempt. Clips are accepted only when they pass MP4 validation; Archive.org/Wikimedia footage, Flux stills, and procedural motion remain fallbacks.
 - A Telegram chat can refine its previous brief. The Cloudflare Worker keeps only the last four prompts per chat for up to 30 days; `/forget` clears them. Without a KV binding, requests still render independently and the bot reports that memory is unavailable.
 
 ## Telegram and Cloudflare setup
@@ -35,4 +37,4 @@ npm test
 npx tsc --noEmit
 ```
 
-Video generation runs `python scripts/generate_assets.py` before `npm run build` (or `npm run build:landscape`). FFmpeg must be installed for the free score and transition effects; the GitHub Actions render workflow installs it when missing.
+Video generation runs `python scripts/setup_real_audio.py` and `python scripts/generate_assets.py` before `npm run build` (or `npm run build:landscape`). FFmpeg is required for audio and media processing; GitHub Actions installs it when missing. Run `python scripts/autonomous_qa_agent.py` for tests, an isolated offline pipeline run, audio decoding checks, and a short Remotion render.

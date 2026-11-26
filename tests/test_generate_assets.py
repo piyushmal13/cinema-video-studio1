@@ -4,11 +4,13 @@ import os
 import subprocess
 import tempfile
 import unittest
+import urllib.parse
 from unittest.mock import Mock, patch
 
 from edge_tts.exceptions import NoAudioReceived
 
 from scripts import generate_assets
+from scripts import setup_real_audio
 
 VALID_NARRATION = (
     "Across this short film, viewers get clear context before reaching the conclusion. "
@@ -63,6 +65,40 @@ class GenerateAssetsTests(unittest.TestCase):
                     capture_output=True,
                 )
 
+    def test_voiceover_silence_trim_shortens_audio_and_retimes_words(self):
+        ffmpeg = generate_assets._ffmpeg_executable()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = os.path.join(temp_dir, "voiceover.mp3")
+            subprocess.run(
+                [
+                    ffmpeg, "-y",
+                    "-f", "lavfi", "-t", "0.5", "-i",
+                    "anullsrc=channel_layout=mono:sample_rate=44100",
+                    "-f", "lavfi", "-t", "2", "-i",
+                    "sine=frequency=440:sample_rate=44100",
+                    "-f", "lavfi", "-t", "0.5", "-i",
+                    "anullsrc=channel_layout=mono:sample_rate=44100",
+                    "-filter_complex", "[0:a][1:a][2:a]concat=n=3:v=0:a=1[a]",
+                    "-map", "[a]", "-c:a", "libmp3lame", "-b:a", "96k", path,
+                ],
+                check=True,
+                capture_output=True,
+            )
+            initial_duration = generate_assets._audio_duration_seconds(path)
+            source_words = [
+                {"word": f"word{index}", "start": index * 0.3, "end": (index + 1) * 0.3}
+                for index in range(8)
+            ]
+
+            words, trimmed_duration = generate_assets.trim_voiceover_silence(
+                path, source_words
+            )
+
+        self.assertLess(trimmed_duration, initial_duration - 0.25)
+        self.assertGreater(trimmed_duration, 1.5)
+        self.assertEqual(len(words), len(source_words))
+        self.assertLessEqual(words[-1]["end"], trimmed_duration)
+
     def test_pollinations_requests_json_mode(self):
         scenes = [
             {
@@ -98,7 +134,7 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertEqual(post.call_args.kwargs["json"]["response_format"], {"type": "json_object"})
         self.assertEqual(post.call_args.kwargs["json"]["max_tokens"], 8192)
 
-    def test_pollinations_accepts_sixteen_scenes_and_trims_to_thirteen(self):
+    def test_pollinations_accepts_sixteen_scenes_and_trims_to_fourteen(self):
         storyboard = {
             "narration": VALID_NARRATION,
             "scenes": self._scenes(16),
@@ -118,7 +154,7 @@ class GenerateAssetsTests(unittest.TestCase):
                 "A focused film about gold-market liquidity", "system", 5
             )
 
-        self.assertEqual(len(result["scenes"]), 13)
+        self.assertEqual(len(result["scenes"]), 14)
         self.assertAlmostEqual(sum(scene["weight"] for scene in result["scenes"]), 1.0)
 
     def test_provider_errors_use_deterministic_storyboard_fallback(self):
@@ -155,7 +191,7 @@ class GenerateAssetsTests(unittest.TestCase):
             )
 
         self.assertGreaterEqual(len(result["narration"].split()), 75)
-        self.assertEqual(len(result["scenes"]), 8)
+        self.assertEqual(len(result["scenes"]), 12)
         self.assertAlmostEqual(sum(scene["weight"] for scene in result["scenes"]), 1.0)
         self.assertIn("gold-market liquidity", result["narration"].lower())
 
@@ -171,7 +207,7 @@ class GenerateAssetsTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(result["narration"].split()), 150)
         self.assertIn("Aaj hum", result["narration"])
-        self.assertEqual(len(result["scenes"]), 8)
+        self.assertEqual(len(result["scenes"]), 12)
 
     def test_edge_no_audio_retries_voices_then_uses_gtts_with_word_timings(self):
         class NoAudioCommunicate:
@@ -333,40 +369,38 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertFalse(generated)
         self.assertFalse(os.path.exists(output_path))
 
-    def test_wikimedia_uses_only_public_domain_or_cc0_jpegs(self):
-        flux = Mock(status_code=503, content=b"")
-        commons = Mock(
-            json=lambda: {
-                "query": {
-                    "pages": {
-                        "1": {
-                            "title": "File:Gold image.jpg",
-                            "imageinfo": [{
-                                "thumburl": "https://commons.example/gold.jpg",
-                                "extmetadata": {
-                                    "LicenseShortName": {"value": "CC0"}
-                                },
-                            }],
-                        }
-                    }
-                }
-            }
-        )
-        commons.raise_for_status = Mock()
+    def test_wikimedia_uses_only_topic_matched_public_domain_or_cc0_photos(self):
+        flux = Mock(status_code=503, content=b"", headers={"Content-Type": "text/plain"})
+        pages = {
+            "1": {
+                "title": "File:Gold bars in a vault.jpg",
+                "imageinfo": [{
+                    "thumburl": "https://commons.example/gold.jpg",
+                    "extmetadata": {"LicenseShortName": {"value": "CC0"}},
+                }],
+            },
+            "2": {
+                "title": "File:Gold market illustration.jpg",
+                "imageinfo": [{
+                    "thumburl": "https://commons.example/illustration.jpg",
+                    "extmetadata": {"LicenseShortName": {"value": "Public domain"}},
+                }],
+            },
+        }
         photo = Mock(
             content=b"\xff\xd8" + b"x" * 6000,
             headers={"Content-Type": "image/jpeg"},
         )
         photo.raise_for_status = Mock()
-        original_dir = os.getcwd()
         with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = os.getcwd()
             os.chdir(temp_dir)
             try:
-                os.makedirs("public/media")
-                with patch.object(
-                    generate_assets.requests,
-                    "get",
-                    side_effect=[flux, commons, photo],
+                with (
+                    patch.object(generate_assets, "_commons_pages", return_value=pages),
+                    patch.object(generate_assets, "try_archive_org_video", return_value=False),
+                    patch.object(generate_assets, "try_wikimedia_video", return_value=False),
+                    patch.object(generate_assets.requests, "get", side_effect=[flux, photo]),
                 ):
                     result = generate_assets.fetch_broll_or_ai_visual(
                         "gold bars in a vault", 1, "vertical"
@@ -375,6 +409,74 @@ class GenerateAssetsTests(unittest.TestCase):
                 self.assertTrue(os.path.isfile("public/media/scene_1_photo.jpg"))
             finally:
                 os.chdir(original_dir)
+
+    def test_archive_video_requires_reusable_rights_and_trims_bounded_file(self):
+        search = Mock()
+        search.json.return_value = {"response": {"docs": [{"identifier": "gold-film"}]}}
+        search.raise_for_status = Mock()
+        metadata = Mock()
+        metadata.json.return_value = {
+            "metadata": {
+                "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/"
+            },
+            "files": [{"name": "gold-market.mp4", "size": "1200000"}],
+        }
+        metadata.raise_for_status = Mock()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = os.path.join(temp_dir, "scene.mp4")
+            with (
+                patch.object(generate_assets.requests, "get", side_effect=[search, metadata]),
+                patch.object(generate_assets, "_download_bounded", return_value=True),
+                patch.object(generate_assets, "_trim_video_clip", return_value=True) as trim,
+            ):
+                result = generate_assets.try_archive_org_video(
+                    "gold market at night", 0, "vertical", output_path
+                )
+
+        self.assertTrue(result)
+        trim.assert_called_once()
+
+    def test_flux_prompt_locks_topic_and_rejects_non_photographic_outputs(self):
+        image = Mock(
+            status_code=200,
+            content=b"\xff\xd8" + b"x" * 6000,
+            headers={"Content-Type": "image/jpeg"},
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = os.getcwd()
+            os.chdir(temp_dir)
+            try:
+                with (
+                    patch.object(generate_assets, "try_archive_org_video", return_value=False),
+                    patch.object(generate_assets, "try_wikimedia_video", return_value=False),
+                    patch.object(generate_assets.requests, "get", return_value=image) as get,
+                ):
+                    result = generate_assets.fetch_broll_or_ai_visual(
+                        "gold bars vault", 2, "vertical"
+                    )
+            finally:
+                os.chdir(original_dir)
+
+        self.assertEqual(result, ("media/scene_2.jpg", "image"))
+        prompt = urllib.parse.unquote(get.call_args.args[0])
+        self.assertIn("gold, bars, vault", prompt)
+        self.assertIn("NO anime", prompt)
+        self.assertIn("NO random portrait", prompt)
+
+    def test_audio_vault_is_small_and_all_stems_decode(self):
+        ffmpeg = generate_assets._ffmpeg_executable()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tracks = setup_real_audio.generate_audio_assets(temp_dir, duration=12)
+            self.assertLess(
+                sum(os.path.getsize(path) for path in tracks),
+                5 * 1024 * 1024,
+            )
+            for path in tracks:
+                subprocess.run(
+                    [ffmpeg, "-v", "error", "-i", path, "-f", "null", "-"],
+                    check=True,
+                    capture_output=True,
+                )
 
     def test_pollinations_free_limit_is_reported_without_retrying_other_models(self):
         response = Mock(
@@ -394,7 +496,7 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertEqual(post.call_count, 2)
         sleep.assert_called_once_with(36)
         self.assertGreaterEqual(len(result["narration"].split()), 60)
-        self.assertEqual(len(result["scenes"]), 8)
+        self.assertEqual(len(result["scenes"]), 12)
 
     def test_short_storyboard_is_retried_with_an_explicit_minimum(self):
         scenes = [

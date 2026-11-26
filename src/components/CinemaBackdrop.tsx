@@ -2,6 +2,7 @@ import React from 'react';
 import {
   AbsoluteFill,
   Img,
+  Loop,
   OffthreadVideo,
   interpolate,
   staticFile,
@@ -28,6 +29,7 @@ export const CinemaBackdrop: React.FC<{
   sceneType?: SceneType;
   motionDurationInFrames?: number;
   beatSync?: boolean;
+  beatTimestamps?: number[];
   accentColor: string;
   isCinemaMode?: boolean;
 }> = ({
@@ -37,6 +39,7 @@ export const CinemaBackdrop: React.FC<{
   sceneType,
   motionDurationInFrames,
   beatSync = false,
+  beatTimestamps = [],
   accentColor,
   isCinemaMode = false,
 }) => {
@@ -75,9 +78,24 @@ export const CinemaBackdrop: React.FC<{
 
   const shakeX = noise2D('camX', frame / (fps * 2.5), 0) * 6;
   const shakeY = noise2D('camY', 0, frame / (fps * 2.5)) * 6;
-  const beatPulse = beatSync
-    ? Math.max(0, Math.sin((frame / fps) * Math.PI * 4)) * 0.012
-    : 0;
+  let beatPulse = 0;
+  if (beatSync && beatTimestamps.length > 0) {
+    const currentSec = frame / fps;
+    let low = 0;
+    let high = beatTimestamps.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (beatTimestamps[middle] < currentSec) low = middle + 1;
+      else high = middle;
+    }
+    const nearestBeat = Math.min(
+      beatTimestamps[low] ?? Number.POSITIVE_INFINITY,
+      beatTimestamps[low - 1] ?? Number.POSITIVE_INFINITY
+    );
+    beatPulse = Math.max(0, 1 - Math.abs(nearestBeat - currentSec) / 0.12) * 0.018;
+  } else if (beatSync) {
+    beatPulse = Math.max(0, Math.sin((frame / fps) * Math.PI * 4)) * 0.012;
+  }
   const animatedScale = scale * (1 + beatPulse);
 
   return (
@@ -88,11 +106,13 @@ export const CinemaBackdrop: React.FC<{
             transform: `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
           }}
         >
-          <OffthreadVideo
-            src={staticFile(mediaFile)}
-            muted
-            style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.12) saturate(1.15)' }}
-          />
+          <Loop durationInFrames={motionDurationInFrames ?? durationInFrames}>
+            <OffthreadVideo
+              src={staticFile(mediaFile)}
+              muted
+              style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.12) saturate(1.15)' }}
+            />
+          </Loop>
         </AbsoluteFill>
       )}
 

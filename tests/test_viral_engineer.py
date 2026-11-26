@@ -18,7 +18,7 @@ class ViralEngineerTests(unittest.TestCase):
         self.assertEqual(plan.score_style, "phonk")
         self.assertTrue(plan.beat_sync)
         self.assertTrue(plan.fast_cuts)
-        self.assertEqual(plan.scene_count, 15)
+        self.assertEqual(plan.scene_count, 14)
 
     def test_meme_and_cinema_select_distinct_audio_and_pacing(self):
         meme = build_viral_plan("--meme Explain a market lesson", "shorts", 30)
@@ -26,11 +26,11 @@ class ViralEngineerTests(unittest.TestCase):
 
         self.assertEqual(meme.archetype, "meme")
         self.assertEqual(meme.score_style, "phonk")
-        self.assertEqual(meme.scene_count, 10)
+        self.assertEqual(meme.scene_count, 11)
         self.assertEqual(cinema.archetype, "cinema")
         self.assertEqual(cinema.score_style, "cinema")
         self.assertFalse(cinema.beat_sync)
-        self.assertEqual(cinema.scene_count, 6)
+        self.assertEqual(cinema.scene_count, 8)
 
     def test_flags_are_removed_without_losing_the_prompt(self):
         self.assertEqual(
@@ -70,8 +70,8 @@ class ViralEngineerTests(unittest.TestCase):
         prompt = enhance_story_prompt("Explain gold", plan)
 
         self.assertIn("Explain gold", prompt)
-        self.assertIn("approximately 10 scenes", prompt)
-        self.assertIn("between 6 and 13", prompt)
+        self.assertIn("approximately 11 scenes", prompt)
+        self.assertIn("between 10 and 14", prompt)
         self.assertIn("pattern-interrupt hook", prompt)
 
 

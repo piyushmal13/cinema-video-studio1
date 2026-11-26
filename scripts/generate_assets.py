@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
 import urllib.parse
@@ -22,6 +23,9 @@ if __package__:
         fetch_trending_context,
         strip_viral_flags,
     )
+    from .longform_director import documentary_direction
+    from .research_director import route_production_request
+    from .setup_real_audio import ensure_audio_assets
 else:
     from prompt_intent import compose_story_prompt, parse_prompt_intent, validate_storyboard
     from viral_engineer import (
@@ -30,6 +34,9 @@ else:
         fetch_trending_context,
         strip_viral_flags,
     )
+    from longform_director import documentary_direction
+    from research_director import route_production_request
+    from setup_real_audio import ensure_audio_assets
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
@@ -152,7 +159,11 @@ def build_fallback_storyboard(
         ("split_compare", "THE TRADE-OFF", "COMPARE THE ALTERNATIVES", "two contrasting strategies under focused light", "zoom_out", "pulse"),
         ("step_list", "THE STANDARD", "TEST THE ASSUMPTIONS", "evidence checklist beside a research notebook", "dolly_push", "whoosh"),
         ("three_d_globe", "THE DECISION", "MAKE THE NEXT MOVE", "risk controls shaping deliberate decisions", "pan_left", "pulse"),
-        ("cinema_outro", "THE TAKEAWAY", "RETURN TO THE CORE IDEA", "golden horizon framing a clear conclusion", "zoom_out", "boom"),
+        ("three_d_bars", "THE EXAMPLE", "MAKE THE MECHANISM VISIBLE", "hands reviewing evidence under studio light", "zoom_in", "pulse"),
+        ("three_d_globe", "THE TIMELINE", "FOLLOW WHAT CHANGES NEXT", "measured timeline connecting changing incentives", "pan_right", "whoosh"),
+        ("split_compare", "THE ALTERNATIVES", "WEIGH THE REAL OPTIONS", "clear decision tree among open alternatives", "dolly_push", "pulse"),
+        ("step_list", "THE IMPLICATION", "NAME THE PRACTICAL CONSEQUENCE", "research notes beside a focused market display", "pan_left", "whoosh"),
+        ("cinema_outro", "THE TAKEAWAY", "RETURN TO THE CORE IDEA", "quiet sunrise over a cinematic city skyline", "zoom_out", "boom"),
     ]
     scenes = [
         {
@@ -160,7 +171,7 @@ def build_fallback_storyboard(
             "weight": 1.0,
             "kicker": kicker,
             "headline": headline,
-            "subline": f"A focused look at {topic}." if index in {0, 7} else "",
+            "subline": f"A focused look at {topic}." if index in {0, len(scene_specs) - 1} else "",
             "visualQuery": visual_query,
             "cameraMotion": motion,
             "sfxCue": cue,
@@ -248,7 +259,7 @@ def generate_storyboard(
                     f"{prompt}\n\nThe previous response was rejected: {e}. "
                     f"Return a complete corrected JSON object. The narration must "
                     f"contain at least {minimum_words} words and include "
-                    "between 3 and 13 complete scenes. Do not shorten it."
+                    "between 3 and 14 complete scenes. Do not shorten it."
                 )
                 time.sleep(46)
 
@@ -458,79 +469,308 @@ def try_generate_ai_video_clip(
     return False
 
 
-def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
-    # Prefer keyless Flux stills, then use Wikimedia Commons public-domain/CC0 photography.
-    try:
-        w, h = (1280, 720) if orientation == "landscape" else (768, 1344)
-        styled_prompt = urllib.parse.quote(
-            f"{query}, dark moody cinematic film still, anamorphic lens flare, 8k photorealistic, obsidian and gold lighting"
-        )
-        img_url = f"https://image.pollinations.ai/prompt/{styled_prompt}?width={w}&height={h}&model=flux&nologo=true&seed={idx+101}"
-        r = requests.get(img_url, timeout=40)
-        if r.status_code == 200 and len(r.content) > 5000:
-            out_path = f"public/media/scene_{idx}.jpg"
-            with open(out_path, "wb") as f:
-                f.write(r.content)
-            return f"media/scene_{idx}.jpg", "image"
-        print(
-            f"Flux image provider returned HTTP {r.status_code} or an undersized image "
-            f"for scene {idx}; trying Wikimedia Commons."
-        )
-    except Exception as e:
-        print(f"Flux image fallback on scene {idx}: {e}")
+_VISUAL_STOP_WORDS = {
+    "a", "an", "and", "at", "by", "for", "from", "in", "into", "of", "on",
+    "over", "the", "through", "to", "under", "with", "cinematic", "photorealistic",
+    "realistic", "wide", "close", "shot", "studio", "light", "lighting",
+}
+_REJECT_MEDIA_TERMS = re.compile(
+    r"\b(?:anime|cartoon|illustration|clip[ -]?art|vector|icon|logo|"
+    r"portrait|headshot|manga|drawing)\b",
+    re.IGNORECASE,
+)
 
+
+def _visual_subject_terms(query: str) -> list[str]:
+    terms = [
+        term.lower()
+        for term in re.findall(r"[A-Za-z][A-Za-z0-9-]{2,}", query)
+        if term.lower() not in _VISUAL_STOP_WORDS
+    ]
+    return list(dict.fromkeys(terms))[:5]
+
+
+def _matches_visual_subject(title: str, query: str) -> bool:
+    if _REJECT_MEDIA_TERMS.search(title):
+        return False
+    terms = _visual_subject_terms(query)
+    return bool(terms) and any(term in title.lower() for term in terms)
+
+
+def _license_is_reusable(metadata: dict) -> bool:
+    values = [
+        metadata.get("licenseurl", ""),
+        metadata.get("rights", ""),
+        metadata.get("LicenseShortName", ""),
+    ]
+    for value in values:
+        if isinstance(value, dict):
+            value = value.get("value", "")
+        plain = re.sub(r"<[^>]+>", " ", str(value)).lower()
+        if "public domain" in plain or "cc0" in plain or "creativecommons.org/publicdomain/zero" in plain:
+            return True
+    return False
+
+
+def _download_bounded(url: str, output_path: str, maximum_bytes: int = 15 * 1024 * 1024) -> bool:
+    response = requests.get(
+        url,
+        headers={"User-Agent": "CinemaVideoStudio/1.0 (public-domain media fetcher)"},
+        stream=True,
+        timeout=(4, 10),
+    )
+    response.raise_for_status()
+    declared_length = response.headers.get("Content-Length")
+    if declared_length and int(declared_length) > maximum_bytes:
+        return False
+
+    written = 0
+    try:
+        with open(output_path, "wb") as output_file:
+            iterator = getattr(response, "iter_content", None)
+            chunks = iterator(chunk_size=64 * 1024) if callable(iterator) else [response.content]
+            for chunk in chunks:
+                if not chunk:
+                    continue
+                written += len(chunk)
+                if written > maximum_bytes:
+                    return False
+                output_file.write(chunk)
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
+    return written > 0
+
+
+def _trim_video_clip(source_path: str, output_path: str, orientation: str) -> bool:
+    width, height = (832, 480) if orientation == "landscape" else (480, 832)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    try:
+        subprocess.run(
+            [
+                _ffmpeg_executable(), "-y", "-i", source_path, "-t", "5",
+                "-map", "0:v:0", "-vf",
+                f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height}",
+                "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-movflags", "+faststart", output_path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"Could not trim public-domain video: {error}")
+        return False
+    return _is_valid_mp4(output_path)
+
+
+def try_archive_org_video(
+    query: str,
+    idx: int,
+    orientation: str,
+    out_mp4: str,
+) -> bool:
+    if os.environ.get("CINEMA_OFFLINE") == "1":
+        return False
+    terms = _visual_subject_terms(query)
+    if not terms:
+        return False
+    search_terms = " OR ".join(f"title:{term} OR subject:{term}" for term in terms[:3])
     try:
         response = requests.get(
-            "https://commons.wikimedia.org/w/api.php",
+            "https://archive.org/advancedsearch.php",
             params={
-                "action": "query",
-                "generator": "search",
-                "gsrsearch": f"filetype:bitmap {query}",
-                "gsrnamespace": 6,
-                "gsrlimit": 6,
-                "prop": "imageinfo",
-                "iiprop": "url|extmetadata",
-                "iiurlwidth": 1280 if orientation == "landscape" else 768,
-                "format": "json",
+                "q": f"mediatype:movies AND ({search_terms})",
+                "fl[]": ["identifier"],
+                "rows": 5,
+                "page": 1,
+                "output": "json",
             },
-            headers={"User-Agent": "CinemaVideoStudio/3.0 (Wikimedia Commons media search)"},
-            timeout=10,
+            headers={"User-Agent": "CinemaVideoStudio/1.0"},
+            timeout=(4, 8),
         )
         response.raise_for_status()
-        pages = response.json().get("query", {}).get("pages", {})
-        for page in pages.values():
-            image_info = (page.get("imageinfo") or [{}])[0]
-            license_meta = image_info.get("extmetadata", {}).get("LicenseShortName", {})
-            license_name = re.sub(
-                r"<[^>]+>", "", str(license_meta.get("value", ""))
-            ).strip().lower()
-            if license_name not in {"cc0", "public domain"}:
+        documents = response.json().get("response", {}).get("docs", [])
+        os.makedirs(os.path.dirname(out_mp4) or ".", exist_ok=True)
+        for document in documents:
+            identifier = document.get("identifier", "")
+            if not re.fullmatch(r"[A-Za-z0-9._-]{1,120}", identifier):
                 continue
-            image_url = image_info.get("thumburl") or image_info.get("url")
-            if not image_url:
-                continue
-            image_response = requests.get(
-                image_url,
-                headers={"User-Agent": "CinemaVideoStudio/3.0"},
-                timeout=10,
+            metadata_response = requests.get(
+                f"https://archive.org/metadata/{identifier}",
+                headers={"User-Agent": "CinemaVideoStudio/1.0"},
+                timeout=(4, 8),
             )
-            image_response.raise_for_status()
-            if (
-                len(image_response.content) <= 5000
-                or "image/jpeg" not in image_response.headers.get("Content-Type", "").lower()
-            ):
+            metadata_response.raise_for_status()
+            metadata = metadata_response.json()
+            if not _license_is_reusable(metadata.get("metadata", {})):
                 continue
-            path = f"public/media/scene_{idx}_photo.jpg"
-            with open(path, "wb") as image_file:
-                image_file.write(image_response.content)
-            print(
-                f"Using Wikimedia Commons {license_name} photo for scene {idx}: "
-                f"{page.get('title', 'untitled')}"
-            )
-            return f"media/scene_{idx}_photo.jpg", "image"
-    except (requests.RequestException, ValueError, OSError) as error:
-        print(f"Wikimedia Commons fallback on scene {idx}: {error}")
+            candidates = [
+                entry for entry in metadata.get("files", [])
+                if isinstance(entry.get("name"), str)
+                and entry["name"].lower().endswith(".mp4")
+                and 0 < int(entry.get("size", 0) or 0) <= 15 * 1024 * 1024
+            ]
+            for entry in sorted(candidates, key=lambda item: int(item.get("size", 0))):
+                encoded_name = urllib.parse.quote(entry["name"], safe="")
+                source_url = f"https://archive.org/download/{identifier}/{encoded_name}"
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    source_path = os.path.join(temp_dir, "archive-source.mp4")
+                    if not _download_bounded(source_url, source_path):
+                        continue
+                    if _trim_video_clip(source_path, out_mp4, orientation):
+                        print(f"Using Archive.org public-domain clip for scene {idx}: {identifier}")
+                        return True
+    except (requests.RequestException, ValueError, TypeError, OSError) as error:
+        print(f"Archive.org video search failed for scene {idx}: {error}")
+    return False
 
+
+def _commons_pages(query: str, filetype: str, orientation: str = "landscape") -> dict:
+    response = requests.get(
+        "https://commons.wikimedia.org/w/api.php",
+        params={
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": f"filetype:{filetype} {query}",
+            "gsrnamespace": 6,
+            "gsrlimit": 6,
+            "prop": "imageinfo",
+            "iiprop": "url|extmetadata|size",
+            "iiurlwidth": 1280 if orientation == "landscape" else 768,
+            "format": "json",
+        },
+        headers={"User-Agent": "CinemaVideoStudio/1.0 (Wikimedia Commons media search)"},
+        timeout=(4, 8),
+    )
+    response.raise_for_status()
+    return response.json().get("query", {}).get("pages", {})
+
+
+def _commons_license(image_info: dict) -> tuple[bool, str]:
+    metadata = image_info.get("extmetadata", {})
+    license_meta = metadata.get("LicenseShortName", {})
+    license_name = re.sub(
+        r"<[^>]+>", "", str(license_meta.get("value", ""))
+    ).strip().lower()
+    return license_name in {"cc0", "public domain"}, license_name
+
+
+def try_wikimedia_video(
+    query: str,
+    idx: int,
+    orientation: str,
+    out_mp4: str,
+) -> bool:
+    if os.environ.get("CINEMA_OFFLINE") == "1":
+        return False
+    try:
+        for page in _commons_pages(query, "video").values():
+            title = str(page.get("title", ""))
+            if not _matches_visual_subject(title, query):
+                continue
+            image_info = (page.get("imageinfo") or [{}])[0]
+            reusable, license_name = _commons_license(image_info)
+            media_url = image_info.get("url")
+            if not reusable or not media_url:
+                continue
+            with tempfile.TemporaryDirectory() as temp_dir:
+                source_path = os.path.join(temp_dir, "commons-source")
+                if not _download_bounded(media_url, source_path):
+                    continue
+                if _trim_video_clip(source_path, out_mp4, orientation):
+                    print(
+                        f"Using Wikimedia Commons {license_name} video for scene {idx}: {title}"
+                    )
+                    return True
+    except (requests.RequestException, ValueError, TypeError, OSError) as error:
+        print(f"Wikimedia Commons video search failed for scene {idx}: {error}")
+    return False
+
+
+def _fetch_wikimedia_photo(query: str, idx: int, orientation: str) -> tuple[str, str]:
+    for page in _commons_pages(query, "bitmap", orientation).values():
+        title = str(page.get("title", ""))
+        if not _matches_visual_subject(title, query) or title.lower().endswith(".svg"):
+            continue
+        image_info = (page.get("imageinfo") or [{}])[0]
+        reusable, license_name = _commons_license(image_info)
+        image_url = image_info.get("thumburl") or image_info.get("url")
+        if not reusable or not image_url or image_url.lower().split("?")[0].endswith(".svg"):
+            continue
+        image_response = requests.get(
+            image_url,
+            headers={"User-Agent": "CinemaVideoStudio/1.0"},
+            timeout=(4, 8),
+        )
+        image_response.raise_for_status()
+        content_type = image_response.headers.get("Content-Type", "").lower()
+        if len(image_response.content) <= 5000 or content_type not in {
+            "image/jpeg", "image/png", "image/webp",
+        }:
+            continue
+        suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[content_type]
+        relative_path = f"media/scene_{idx}_photo{suffix}"
+        path = os.path.join("public", relative_path.replace("/", os.sep))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as image_file:
+            image_file.write(image_response.content)
+        print(f"Using Wikimedia Commons {license_name} photo for scene {idx}: {title}")
+        return relative_path, "image"
+    return "", "none"
+
+
+def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
+    if os.environ.get("CINEMA_OFFLINE") == "1":
+        return "", "none"
+    clip_path = os.path.join("public", "media", f"scene_{idx}_stock.mp4")
+    if try_archive_org_video(query, idx, orientation, clip_path):
+        return f"media/scene_{idx}_stock.mp4", "video"
+    if try_wikimedia_video(query, idx, orientation, clip_path):
+        return f"media/scene_{idx}_stock.mp4", "video"
+
+    try:
+        width, height = (1280, 720) if orientation == "landscape" else (768, 1344)
+        subjects = ", ".join(_visual_subject_terms(query))
+        locked_prompt = (
+            f"Photorealistic documentary cinematography of exactly {subjects}; "
+            f"the visible subject must directly match {subjects}. {query}. "
+            "Natural photographic detail, physically plausible light, real camera optics, "
+            "high contrast obsidian and warm gold grade. NEGATIVE: NO anime, NO cartoon, "
+            "NO illustration, NO random portrait, NO text, NO watermark, NO logo, "
+            "NO collage, NO clip-art, NO unrelated subject."
+        )
+        encoded_prompt = urllib.parse.quote(locked_prompt, safe="")
+        image_url = (
+            f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+            f"?width={width}&height={height}&model=flux&nologo=true&seed={idx + 101}"
+        )
+        response = requests.get(image_url, timeout=(5, 20))
+        content_type = response.headers.get("Content-Type", "").lower()
+        if response.status_code == 200 and len(response.content) > 5000 and content_type.startswith("image/"):
+            suffix = {
+                "image/jpeg": ".jpg",
+                "image/png": ".png",
+                "image/webp": ".webp",
+            }.get(content_type)
+            if suffix:
+                relative_path = f"media/scene_{idx}{suffix}"
+                path = os.path.join("public", relative_path.replace("/", os.sep))
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "wb") as image_file:
+                    image_file.write(response.content)
+                return relative_path, "image"
+        print(f"Flux returned no usable image for scene {idx}; trying Commons photography.")
+    except (requests.RequestException, OSError, ValueError) as error:
+        print(f"Flux image fallback on scene {idx}: {error}")
+
+    try:
+        return _fetch_wikimedia_photo(query, idx, orientation)
+    except (requests.RequestException, ValueError, TypeError, OSError) as error:
+        print(f"Wikimedia Commons photo fallback on scene {idx}: {error}")
     return "", "none"
 
 
@@ -551,47 +791,17 @@ def _ffmpeg_executable() -> str:
 
 
 def synthesize_transition_sfx(output_dir: str = "public") -> tuple[str, str]:
-    ffmpeg = _ffmpeg_executable()
     os.makedirs(output_dir, exist_ok=True)
+    asset_dir = os.environ.get("CINEMA_AUDIO_ASSET_DIR", "assets/audio")
+    ensure_audio_assets(asset_dir)
+    for name in ("sfx_boom.mp3", "sfx_whoosh.mp3", "sfx_pop.mp3"):
+        source = os.path.join(asset_dir, name)
+        destination = os.path.join(output_dir, name)
+        shutil.copyfile(source, destination)
     boom_path = os.path.join(output_dir, "sfx_boom.mp3")
     whoosh_path = os.path.join(output_dir, "sfx_whoosh.mp3")
-    commands = [
-        [
-            ffmpeg,
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "aevalsrc=0.85*sin(2*PI*(48+80*exp(-7*t))*t)*exp(-2.8*t):s=44100:d=1.6",
-            "-af",
-            "lowpass=f=180,alimiter=limit=0.95",
-            "-c:a",
-            "libmp3lame",
-            "-b:a",
-            "160k",
-            boom_path,
-        ],
-        [
-            ffmpeg,
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "anoisesrc=color=pink:sample_rate=44100:duration=0.8",
-            "-af",
-            "highpass=f=220,lowpass=f=11000,afade=t=in:st=0:d=0.05,"
-            "afade=t=out:st=0.45:d=0.35,alimiter=limit=0.95",
-            "-c:a",
-            "libmp3lame",
-            "-b:a",
-            "160k",
-            whoosh_path,
-        ],
-    ]
-    for command in commands:
-        subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
     if any(not os.path.isfile(path) or os.path.getsize(path) == 0 for path in (boom_path, whoosh_path)):
-        raise RuntimeError("FFmpeg completed without producing both transition sound effects.")
+        raise RuntimeError("Audio vault did not provide both transition sound effects.")
     return "sfx_boom.mp3", "sfx_whoosh.mp3"
 
 
@@ -601,83 +811,199 @@ def synthesize_ambient_cinema_score(
     scenes: list,
     score_style: str = "cinema",
 ):
-    dur = max(10.0, duration_sec + 2.0)
+    if scenes:
+        duration_sec = max(duration_sec, float(scenes[-1].get("endSec", duration_sec)))
     ffmpeg = _ffmpeg_executable()
+    asset_dir = os.environ.get("CINEMA_AUDIO_ASSET_DIR", "assets/audio")
+    ensure_audio_assets(asset_dir)
+    bed_name = "phonk_bed.mp3" if score_style == "phonk" else "cinema_bed.mp3"
+    bed_path = os.path.join(asset_dir, bed_name)
+    dur = max(10.0, duration_sec + 2.0)
     fade_out_start = max(1.0, dur - 3.0)
-    if score_style == "phonk":
-        inputs = [
-            "-f",
-            "lavfi",
-            "-i",
-            (
-                f"aevalsrc=0.34*sin(2*PI*55*t)"
-                f"*abs(cos(2*PI*2*t))*abs(cos(2*PI*2*t))"
-                f"*abs(cos(2*PI*2*t))*abs(cos(2*PI*2*t)):s=44100:d={dur}"
-            ),
-            "-f",
-            "lavfi",
-            "-i",
-            (
-                f"aevalsrc=0.14*(sin(2*PI*880*t)+0.45*sin(2*PI*1320*t))"
-                f"*abs(cos(2*PI*2*t))*abs(cos(2*PI*2*t))"
-                f"*abs(cos(2*PI*2*t))*abs(cos(2*PI*2*t)):s=44100:d={dur}"
-            ),
-            "-f",
-            "lavfi",
-            "-i",
-            (
-                f"aevalsrc=0.065*sin(2*PI*9000*t)"
-                f"*abs(cos(2*PI*4*t))*abs(cos(2*PI*4*t))"
-                f"*abs(cos(2*PI*4*t))*abs(cos(2*PI*4*t)):s=44100:d={dur}"
-            ),
-        ]
-        filters = (
-            "[0:a]volume=0.75[808];"
-            "[1:a]volume=0.85[cowbell];"
-            "[2:a]volume=0.5[hat];"
-            "[808][cowbell][hat]amix=inputs=3:duration=first:normalize=0,"
-            "lowpass=f=12000,aecho=0.55:0.7:45:0.25,"
-            f"afade=t=in:st=0:d=0.25,afade=t=out:st={fade_out_start}:d=3,"
-            "alimiter=limit=0.85[mix]"
-        )
-    else:
-        inputs = [
-            "-f",
-            "lavfi",
-            "-i",
-            (
-                f"aevalsrc=0.20*sin(2*PI*55*t)*(0.65+0.35*sin(2*PI*0.08*t))"
-                f"+0.10*sin(2*PI*82.41*t)*cos(2*PI*0.06*t)"
-                f"+0.05*sin(2*PI*110*t)*sin(2*PI*0.04*t)"
-                f"+0.035*sin(2*PI*164.81*t):s=44100:d={dur}"
-            ),
-        ]
-        filters = (
-            "[0:a]lowpass=f=900,aecho=0.8:0.88:60:0.4,"
-            f"afade=t=in:st=0:d=2.5,afade=t=out:st={fade_out_start}:d=3,"
-            "alimiter=limit=0.85[mix]"
-        )
     subprocess.run(
         [
             ffmpeg,
             "-y",
-            *inputs,
-            "-filter_complex",
-            filters,
-            "-map",
-            "[mix]",
+            "-stream_loop", "-1", "-i", bed_path,
+            "-t", str(dur),
+            "-af",
+            f"afade=t=in:st=0:d=0.6,afade=t=out:st={fade_out_start}:d=3,"
+            "alimiter=limit=0.9",
             "-c:a",
             "libmp3lame",
-            "-b:a",
-            "192k",
+            "-b:a", "96k",
             out_mp3,
         ],
         check=True,
         capture_output=True,
         text=True,
+        timeout=120,
     )
     if not os.path.isfile(out_mp3) or os.path.getsize(out_mp3) == 0:
         raise RuntimeError("FFmpeg completed without producing the ambient score.")
+
+
+def analyze_beat_timestamps(audio_path: str, duration_sec: float) -> list[float]:
+    try:
+        import librosa
+
+        signal, sample_rate = librosa.load(
+            audio_path,
+            sr=None,
+            mono=True,
+            duration=min(max(duration_sec, 1), 60),
+        )
+        beats = librosa.onset.onset_detect(
+            y=signal,
+            sr=sample_rate,
+            units="time",
+            backtrack=False,
+        )
+    except (ImportError, OSError, ValueError, RuntimeError) as error:
+        raise RuntimeError(f"Could not analyze the generated music beats: {error}") from error
+    return [
+        round(float(timestamp), 3)
+        for timestamp in beats
+        if 0 <= float(timestamp) < duration_sec
+    ][:512]
+
+
+def _retime_words(words: list[dict], original_duration: float, new_duration: float) -> list[dict]:
+    if original_duration <= 0 or new_duration <= 0:
+        raise ValueError("Audio timing durations must be positive.")
+    ratio = new_duration / original_duration
+    return [
+        {
+            **word,
+            "start": round(min(new_duration, word["start"] * ratio), 3),
+            "end": round(min(new_duration, word["end"] * ratio), 3),
+        }
+        for word in words
+    ]
+
+
+def trim_voiceover_silence(path: str, words: list[dict]) -> tuple[list[dict], float]:
+    original_duration = _audio_duration_seconds(path)
+    edited_path = f"{path}.edited.mp3"
+    auto_editor = shutil.which("auto-editor") or shutil.which("auto_editor")
+    if auto_editor:
+        try:
+            subprocess.run(
+                [
+                    auto_editor, path,
+                    "--edit", "audio:threshold=0.04",
+                    "--margin", "0.12s",
+                    "--output", edited_path,
+                    "-vn", "-sn", "-dn",
+                    "--audio-bitrate", "128k",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=90,
+            )
+            if os.path.isfile(edited_path) and os.path.getsize(edited_path) > 0:
+                new_duration = _audio_duration_seconds(edited_path)
+                os.replace(edited_path, path)
+                return _retime_words(words, original_duration, new_duration), new_duration
+        except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+            detail = (
+                getattr(error, "stderr", None)
+                or getattr(error, "stdout", None)
+                or str(error)
+            )
+            print(f"auto-editor silence trim failed; using FFmpeg: {detail.strip()}")
+        finally:
+            if os.path.exists(edited_path):
+                os.remove(edited_path)
+
+    try:
+        subprocess.run(
+            [
+                _ffmpeg_executable(), "-y", "-i", path,
+                "-af",
+                "silenceremove=start_periods=1:start_duration=0.12:"
+                "start_threshold=-48dB:stop_periods=1:stop_duration=0.18:"
+                "stop_threshold=-48dB",
+                "-c:a", "libmp3lame", "-b:a", "128k", edited_path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        new_duration = _audio_duration_seconds(edited_path)
+        os.replace(edited_path, path)
+    except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+        if os.path.exists(edited_path):
+            os.remove(edited_path)
+        raise RuntimeError(f"Could not trim voiceover silence with auto-editor or FFmpeg: {error}") from error
+    return _retime_words(words, original_duration, new_duration), new_duration
+
+
+def mix_final_audio(
+    voiceover_path: str,
+    score_path: str,
+    output_path: str,
+    scenes: list[dict],
+    duration_sec: float,
+) -> None:
+    asset_dir = os.environ.get("CINEMA_AUDIO_ASSET_DIR", "assets/audio")
+    ensure_audio_assets(asset_dir)
+    inputs = [
+        _ffmpeg_executable(), "-y",
+        "-i", voiceover_path,
+        "-i", score_path,
+    ]
+    filters = [
+        "[1:a]volume=0.15[bg]",
+        "[bg][0:a]sidechaincompress=threshold=0.03:ratio=5:attack=18:release=280[ducked]",
+        "[0:a]volume=1[voice]",
+    ]
+    audio_labels = ["[voice]", "[ducked]"]
+    for scene in scenes:
+        if scene.get("startSec", 0) <= 0:
+            continue
+        cue = scene.get("sfxCue")
+        filename = {
+            "boom": "sfx_boom.mp3",
+            "pulse": "sfx_pop.mp3",
+        }.get(cue, "sfx_whoosh.mp3")
+        delay_ms = max(0, round(float(scene["startSec"]) * 1000))
+        input_index = len(audio_labels)
+        inputs.extend(["-i", os.path.join(asset_dir, filename)])
+        label = f"sfx{input_index}"
+        filters.append(
+            f"[{input_index}:a]adelay={delay_ms}|{delay_ms},volume=0.28[{label}]"
+        )
+        audio_labels.append(f"[{label}]")
+
+    filters.append(
+        "".join(audio_labels)
+        + f"amix=inputs={len(audio_labels)}:duration=first:normalize=0,"
+        "alimiter=limit=0.95,loudnorm=I=-14:TP=-1.5:LRA=11[master]"
+    )
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    subprocess.run(
+        [
+            *inputs,
+            "-filter_complex", ";".join(filters),
+            "-map", "[master]",
+            "-t", str(max(1, duration_sec)),
+            "-c:a", "libmp3lame",
+            "-b:a", "128k",
+            output_path,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    if not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
+        raise RuntimeError("FFmpeg did not produce the mastered audio mix.")
+
 
 def sanitize_narration(text: str) -> str:
     cleaned = html.unescape(str(text or ""))
@@ -749,6 +1075,25 @@ def _estimated_word_timings(text: str, duration: float) -> list[dict]:
         }
         for index, word in enumerate(tokens)
     ]
+
+
+def synthesize_offline_voice_and_timings(text: str, out_mp3: str) -> tuple[list[dict], float]:
+    duration = max(8.0, len(text.split()) / 2.5)
+    os.makedirs(os.path.dirname(out_mp3) or ".", exist_ok=True)
+    subprocess.run(
+        [
+            _ffmpeg_executable(), "-y",
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
+            "-t", str(duration),
+            "-c:a", "libmp3lame", "-b:a", "96k",
+            out_mp3,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return _estimated_word_timings(text, duration), duration
 
 
 async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
@@ -839,25 +1184,35 @@ async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
         ) from error
 
 def main():
+    offline_mode = os.environ.get("CINEMA_OFFLINE") == "1"
     trending_context = ""
-    if re.search(r"(?<!\S)--trending(?!\S)", RAW_PROMPT, re.IGNORECASE):
+    if not offline_mode and re.search(r"(?<!\S)--trending(?!\S)", RAW_PROMPT, re.IGNORECASE):
         try:
             trending_context = fetch_trending_context()
         except requests.RequestException as error:
             print(f"Google Trends context unavailable; continuing without it: {error}")
 
-    intent = parse_prompt_intent(
-        strip_viral_flags(RAW_PROMPT),
+    route = route_production_request(
+        RAW_PROMPT,
         os.environ.get("FORMAT", "vertical"),
+        research_enabled=not offline_mode,
+    )
+    if route.research_context:
+        trending_context = "\n".join(
+            part for part in (trending_context, route.research_context) if part
+        )
+    intent = parse_prompt_intent(
+        strip_viral_flags(route.prompt),
+        route.format_hint,
     )
     orientation = intent.format
     viral_plan = build_viral_plan(
-        RAW_PROMPT,
+        route.prompt,
         intent.mode,
         intent.duration_sec,
         trending_context=trending_context,
     )
-    scene_count_instruction = "6 to 13" if viral_plan.fast_cuts else "5 to 13"
+    scene_count_instruction = "10 to 14" if viral_plan.fast_cuts else "8 to 14"
 
     sys_prompt = SYSTEM_PROMPT.format(
         target_words=intent.target_words,
@@ -869,26 +1224,53 @@ def main():
         color=intent.color,
         mode=intent.mode,
     )
+    if route.documentary:
+        sys_prompt += "\n\n" + documentary_direction(
+            route.duration_sec,
+            route.research_context,
+        )
 
     prompt_context = os.environ.get("PROMPT_CONTEXT", "").strip()
+    if trending_context and not route.research_context:
+        prompt_context = "\n".join(
+            part for part in (prompt_context, trending_context) if part
+        )
     full_prompt = enhance_story_prompt(
         compose_story_prompt(intent.prompt, prompt_context),
         viral_plan,
     )
-    storyboard = generate_storyboard(
-        full_prompt,
-        sys_prompt,
-        intent.min_narration_words,
-        brand=intent.brand,
-        color=intent.color,
-        mode=intent.mode,
-        is_hinglish=intent.voice.startswith(("hi-IN-", "en-IN-")),
-    )
+    if offline_mode:
+        storyboard = build_fallback_storyboard(
+            full_prompt,
+            intent.brand,
+            intent.color,
+            intent.mode,
+            intent.voice.startswith(("hi-IN-", "en-IN-")),
+            min_words=intent.min_narration_words,
+        )
+    else:
+        storyboard = generate_storyboard(
+            full_prompt,
+            sys_prompt,
+            intent.min_narration_words,
+            brand=intent.brand,
+            color=intent.color,
+            mode=intent.mode,
+            is_hinglish=intent.voice.startswith(("hi-IN-", "en-IN-")),
+        )
     narration = sanitize_narration(storyboard["narration"])
 
-    words, total_duration = asyncio.run(
-        synthesize_voice_and_timings(narration, intent.voice, "public/voiceover.mp3")
-    )
+    if offline_mode:
+        words, total_duration = synthesize_offline_voice_and_timings(
+            narration, "public/voiceover.mp3"
+        )
+    else:
+        words, total_duration = asyncio.run(
+            synthesize_voice_and_timings(narration, intent.voice, "public/voiceover.mp3")
+        )
+        words, total_duration = trim_voiceover_silence(
+            "public/voiceover.mp3", words
+        )
 
     scenes = storyboard.get("scenes", [])
     total_weight = sum(s["weight"] for s in scenes)
@@ -907,7 +1289,11 @@ def main():
 
         q = s["visualQuery"]
         clip_path = f"public/media/scene_{idx}.mp4"
-        if idx in {0, 2} and try_generate_ai_video_clip(q, idx, orientation, clip_path):
+        if (
+            not offline_mode
+            and idx in {0, 2}
+            and try_generate_ai_video_clip(q, idx, orientation, clip_path)
+        ):
             media_file, media_kind = f"media/scene_{idx}.mp4", "video"
         else:
             media_file, media_kind = fetch_broll_or_ai_visual(q, idx, orientation)
@@ -922,6 +1308,19 @@ def main():
         score_style=viral_plan.score_style,
     )
     boom_file, whoosh_file = synthesize_transition_sfx("public")
+    asset_dir = os.environ.get("CINEMA_AUDIO_ASSET_DIR", "assets/audio")
+    beat_track = os.path.join(
+        asset_dir,
+        "phonk_bed.mp3" if viral_plan.score_style == "phonk" else "cinema_bed.mp3",
+    )
+    beat_timestamps = analyze_beat_timestamps(beat_track, total_duration)
+    mix_final_audio(
+        "public/voiceover.mp3",
+        "public/ambient_score.mp3",
+        "public/master_audio.mp3",
+        timed_scenes,
+        total_duration,
+    )
     output = {
         "title": storyboard.get("title", "Cinema AI Video"),
         "brandTag": intent.brand,
@@ -929,14 +1328,17 @@ def main():
         "mode": intent.mode,
         "viralMode": viral_plan.archetype,
         "beatSync": viral_plan.beat_sync,
+        "beatTimestamps": beat_timestamps,
         "format": intent.format,
         "totalDurationSec": round(total_duration, 2),
         "scenes": timed_scenes,
         "words": words,
         "voiceoverFile": "voiceover.mp3",
         "ambientScoreFile": "ambient_score.mp3",
+        "masterAudioFile": "master_audio.mp3",
         "sfxBoomFile": boom_file,
         "sfxWhooshFile": whoosh_file,
+        "sfxPopFile": "sfx_pop.mp3",
     }
     with open("public/video_data.json", "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)

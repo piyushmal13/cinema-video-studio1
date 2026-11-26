@@ -173,7 +173,7 @@ def validate_storyboard(
         )
     if not isinstance(scenes, list) or not scenes:
         raise ValueError("The AI response must contain at least one scene.")
-    scenes = [dict(scene) if isinstance(scene, dict) else scene for scene in scenes[:13]]
+    scenes = [dict(scene) if isinstance(scene, dict) else scene for scene in scenes[:14]]
 
     valid_types = {
         "cinema_hero",

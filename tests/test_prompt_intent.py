@@ -119,7 +119,7 @@ class PromptIntentTests(unittest.TestCase):
             {"narration": narration, "scenes": many_scenes},
             1,
         )
-        self.assertEqual(len(normalized["scenes"]), 13)
+        self.assertEqual(len(normalized["scenes"]), 14)
         self.assertAlmostEqual(sum(scene["weight"] for scene in normalized["scenes"]), 1.0)
         self.assertTrue(all(scene["weight"] > 0 for scene in normalized["scenes"]))
 

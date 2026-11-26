@@ -5,8 +5,14 @@ __pycache__/
 **/__pycache__/
 *.py[cod]
 public/media/*.jpg
+public/media/*.png
+public/media/*.webp
 public/media/*.mp3
 public/media/*.mp4
+public/media/*.webm
+public/media/*.ogv
+public/media/*.tmp
 public/*.mp3
 public/voiceover.mp3
 public/ambient_score.mp3
+assets/audio/*.tmp

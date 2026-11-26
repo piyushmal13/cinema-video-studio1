@@ -35,7 +35,7 @@ export interface WordTiming {
   end: number;
 }
 
-export interface VideoProps {
+export interface VideoProps extends Record<string, unknown> {
   title: string;
   brandTag: string;
   themeColor: string;
@@ -43,11 +43,15 @@ export interface VideoProps {
   format?: 'vertical' | 'landscape';
   viralMode?: 'phonk' | 'meme' | 'cinema';
   beatSync?: boolean;
+  beatTimestamps?: number[];
   totalDurationSec: number;
   scenes: SceneItem[];
   words: WordTiming[];
   voiceoverFile?: string;
   ambientScoreFile?: string;
+  masterAudioFile?: string;
   sfxBoomFile?: string;
   sfxWhooshFile?: string;
+  sfxPopFile?: string;
+  isLandscape?: boolean;
 }
