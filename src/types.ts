@@ -53,5 +53,6 @@ export interface VideoProps extends Record<string, unknown> {
   sfxBoomFile?: string;
   sfxWhooshFile?: string;
   sfxPopFile?: string;
+  sfxFiles?: Partial<Record<'boom' | 'whoosh' | 'pulse', string[]>>;
   isLandscape?: boolean;
 }

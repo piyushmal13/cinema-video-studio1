@@ -20,6 +20,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Restore reusable media cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/cinema-media
+          key: cinema-media-v1-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            cinema-media-v1-${{ runner.os }}-
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

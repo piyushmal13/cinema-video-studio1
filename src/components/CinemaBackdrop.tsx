@@ -27,6 +27,7 @@ export const CinemaBackdrop: React.FC<{
   mediaKind?: 'video' | 'image' | 'none';
   cameraMotion?: CameraMotion;
   sceneType?: SceneType;
+  sceneIndex?: number;
   motionDurationInFrames?: number;
   beatSync?: boolean;
   beatTimestamps?: number[];
@@ -37,6 +38,7 @@ export const CinemaBackdrop: React.FC<{
   mediaKind = 'none',
   cameraMotion = 'zoom_in',
   sceneType,
+  sceneIndex = 0,
   motionDurationInFrames,
   beatSync = false,
   beatTimestamps = [],
@@ -50,6 +52,14 @@ export const CinemaBackdrop: React.FC<{
     frame / Math.max(1, motionDurationInFrames ?? durationInFrames)
   );
   const backdropAccent = sceneType ? sceneAccentColors[sceneType] : accentColor;
+  const fallbackBackground =
+    sceneType === 'split_compare'
+      ? 'linear-gradient(110deg, rgba(127,29,29,0.42), rgba(5,8,15,0.75) 48%, rgba(212,175,55,0.22)), radial-gradient(circle at 50% 35%, #090D16 0%, #04060A 100%)'
+      : sceneType === 'step_list'
+        ? `linear-gradient(90deg, ${backdropAccent}20 1px, transparent 1px), linear-gradient(${backdropAccent}18 1px, transparent 1px), radial-gradient(circle at 50% 35%, #111827 0%, #04060A 100%)`
+        : sceneType === 'candlestick_chart'
+          ? `linear-gradient(90deg, ${backdropAccent}17 1px, transparent 1px), linear-gradient(${backdropAccent}17 1px, transparent 1px), radial-gradient(circle at 50% 35%, ${backdropAccent}42 0%, #090D16 55%, #04060A 100%)`
+          : `radial-gradient(circle at 50% 35%, ${backdropAccent}42 0%, #090D16 55%, #04060A 100%), linear-gradient(135deg, #05070B 0%, ${backdropAccent}18 50%, #05070B 100%)`;
 
   let scale = 1.06;
   let translateX = 0;
@@ -132,7 +142,11 @@ export const CinemaBackdrop: React.FC<{
       {(!mediaFile || mediaKind === 'none') && (
         <AbsoluteFill
           style={{
-            background: `radial-gradient(circle at 50% 35%, ${backdropAccent}42 0%, #090D16 55%, #04060A 100%), linear-gradient(135deg, #05070B 0%, ${backdropAccent}18 50%, #05070B 100%)`,
+            background: fallbackBackground,
+            backgroundSize:
+              sceneType === 'step_list' || sceneType === 'candlestick_chart'
+                ? '64px 64px, 64px 64px, cover'
+                : 'cover',
             transform: `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
           }}
         />
@@ -172,8 +186,8 @@ export const CinemaBackdrop: React.FC<{
 
       <AbsoluteFill style={{ pointerEvents: 'none' }}>
         {Array.from({ length: 14 }).map((_, idx) => {
-          const px = (idx * 173 + frame * (0.4 + (idx % 3) * 0.2)) % 1080;
-          const py = (idx * 293 - frame * (0.5 + (idx % 4) * 0.15) + 4000) % 1920;
+          const px = (idx * 173 + sceneIndex * 71 + frame * (0.4 + (idx % 3) * 0.2)) % 1080;
+          const py = (idx * 293 - sceneIndex * 97 - frame * (0.5 + (idx % 4) * 0.15) + 4000) % 1920;
           const size = 2 + (idx % 3) * 2;
           return (
             <div

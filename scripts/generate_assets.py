@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import html
 import json
 import math
@@ -25,7 +26,8 @@ if __package__:
     )
     from .longform_director import documentary_direction
     from .research_director import route_production_request
-    from .setup_real_audio import ensure_audio_assets
+    from .media_cache import MediaAssetCache
+    from .setup_real_audio import SFX_VARIANTS, ensure_audio_assets
 else:
     from prompt_intent import compose_story_prompt, parse_prompt_intent, validate_storyboard
     from viral_engineer import (
@@ -36,7 +38,8 @@ else:
     )
     from longform_director import documentary_direction
     from research_director import route_production_request
-    from setup_real_audio import ensure_audio_assets
+    from media_cache import MediaAssetCache
+    from setup_real_audio import SFX_VARIANTS, ensure_audio_assets
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
@@ -395,6 +398,15 @@ def try_generate_ai_video_clip(
 ) -> bool:
     if idx not in {0, 2}:
         return False
+    cache = MediaAssetCache()
+    cached = cache.get(prompt, orientation, expected_kind="video")
+    if cached:
+        cached_path, _ = cached
+        os.makedirs(os.path.dirname(out_mp4) or ".", exist_ok=True)
+        shutil.copyfile(cached_path, out_mp4)
+        print(f"Using cached motion clip for scene {idx}.")
+        return True
+
     deadline = time.monotonic() + 45
     width, height = (832, 480) if orientation == "landscape" else (480, 832)
     encoded_prompt = urllib.parse.quote(
@@ -418,6 +430,7 @@ def try_generate_ai_video_clip(
             with open(out_mp4, "wb") as output_file:
                 output_file.write(response.content)
             if _is_valid_mp4(out_mp4):
+                cache.store(prompt, orientation, out_mp4, "video")
                 print(f"Generated scene {idx} video with Pollinations.")
                 return True
         print(f"Pollinations video unavailable for scene {idx}: HTTP {response.status_code}.")
@@ -457,6 +470,7 @@ def try_generate_ai_video_clip(
         return False
 
     if result.returncode == 0 and _is_valid_mp4(out_mp4):
+        cache.store(prompt, orientation, out_mp4, "video")
         print(f"Generated scene {idx} video with Hugging Face ZeroGPU.")
         return True
     if os.path.isfile(out_mp4):
@@ -723,7 +737,7 @@ def _fetch_wikimedia_photo(query: str, idx: int, orientation: str) -> tuple[str,
     return "", "none"
 
 
-def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
+def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
     if os.environ.get("CINEMA_OFFLINE") == "1":
         return "", "none"
     clip_path = os.path.join("public", "media", f"scene_{idx}_stock.mp4")
@@ -774,6 +788,32 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
     return "", "none"
 
 
+def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
+    if os.environ.get("CINEMA_OFFLINE") == "1":
+        return "", "none"
+
+    cache = MediaAssetCache()
+    cached = cache.get(query, orientation)
+    if cached:
+        cached_path, media_kind = cached
+        relative_path = f"media/scene_{idx}_cached{cached_path.suffix}"
+        destination = os.path.join("public", relative_path.replace("/", os.sep))
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        shutil.copyfile(cached_path, destination)
+        print(f"Reused cached {media_kind} media for scene {idx}.")
+        return relative_path, media_kind
+
+    relative_path, media_kind = _fetch_broll_or_ai_visual_uncached(
+        query,
+        idx,
+        orientation,
+    )
+    if media_kind != "none" and relative_path:
+        source = os.path.join("public", relative_path.replace("/", os.sep))
+        cache.store(query, orientation, source, media_kind)
+    return relative_path, media_kind
+
+
 def _ffmpeg_executable() -> str:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -794,7 +834,10 @@ def synthesize_transition_sfx(output_dir: str = "public") -> tuple[str, str]:
     os.makedirs(output_dir, exist_ok=True)
     asset_dir = os.environ.get("CINEMA_AUDIO_ASSET_DIR", "assets/audio")
     ensure_audio_assets(asset_dir)
-    for name in ("sfx_boom.mp3", "sfx_whoosh.mp3", "sfx_pop.mp3"):
+    names = dict.fromkeys(
+        name for variants in SFX_VARIANTS.values() for name in variants
+    )
+    for name in names:
         source = os.path.join(asset_dir, name)
         destination = os.path.join(output_dir, name)
         shutil.copyfile(source, destination)
@@ -803,6 +846,15 @@ def synthesize_transition_sfx(output_dir: str = "public") -> tuple[str, str]:
     if any(not os.path.isfile(path) or os.path.getsize(path) == 0 for path in (boom_path, whoosh_path)):
         raise RuntimeError("Audio vault did not provide both transition sound effects.")
     return "sfx_boom.mp3", "sfx_whoosh.mp3"
+
+
+def _sfx_variant_filename(scene: dict, scene_index: int) -> str:
+    cue = scene.get("sfxCue")
+    cue = cue if cue in SFX_VARIANTS else "whoosh"
+    variants = SFX_VARIANTS[cue]
+    headline = str(scene.get("headline", ""))
+    digest = hashlib.sha256(headline.encode("utf-8")).digest()[0]
+    return variants[(scene_index + digest) % len(variants)]
 
 
 def synthesize_ambient_cinema_score(
@@ -963,14 +1015,10 @@ def mix_final_audio(
         "[0:a]volume=1[voice]",
     ]
     audio_labels = ["[voice]", "[ducked]"]
-    for scene in scenes:
+    for scene_index, scene in enumerate(scenes):
         if scene.get("startSec", 0) <= 0:
             continue
-        cue = scene.get("sfxCue")
-        filename = {
-            "boom": "sfx_boom.mp3",
-            "pulse": "sfx_pop.mp3",
-        }.get(cue, "sfx_whoosh.mp3")
+        filename = _sfx_variant_filename(scene, scene_index)
         delay_ms = max(0, round(float(scene["startSec"]) * 1000))
         input_index = len(audio_labels)
         inputs.extend(["-i", os.path.join(asset_dir, filename)])
@@ -1339,6 +1387,7 @@ def main():
         "sfxBoomFile": boom_file,
         "sfxWhooshFile": whoosh_file,
         "sfxPopFile": "sfx_pop.mp3",
+        "sfxFiles": SFX_VARIANTS,
     }
     with open("public/video_data.json", "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)

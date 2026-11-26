@@ -55,15 +55,66 @@ class GenerateAssetsTests(unittest.TestCase):
     def test_ffmpeg_synthesizes_decodable_transition_sfx(self):
         ffmpeg = generate_assets._ffmpeg_executable()
         with tempfile.TemporaryDirectory() as temp_dir:
-            boom, whoosh = generate_assets.synthesize_transition_sfx(temp_dir)
-            for filename in (boom, whoosh):
-                path = os.path.join(temp_dir, filename)
-                self.assertGreater(os.path.getsize(path), 1000)
-                subprocess.run(
-                    [ffmpeg, "-v", "error", "-i", path, "-f", "null", "-"],
-                    check=True,
-                    capture_output=True,
+            assets_dir = os.path.join(temp_dir, "assets")
+            output_dir = os.path.join(temp_dir, "public")
+            with patch.dict(
+                os.environ,
+                {"CINEMA_AUDIO_ASSET_DIR": assets_dir},
+            ):
+                generate_assets.synthesize_transition_sfx(output_dir)
+            for variants in setup_real_audio.SFX_VARIANTS.values():
+                for filename in variants:
+                    path = os.path.join(output_dir, filename)
+                    self.assertGreater(os.path.getsize(path), 1000)
+                    subprocess.run(
+                        [ffmpeg, "-v", "error", "-i", path, "-f", "null", "-"],
+                        check=True,
+                        capture_output=True,
+                    )
+
+    def test_sfx_cue_variants_cycle_without_repeating_the_same_file(self):
+        scene = {"sfxCue": "whoosh", "headline": "A changing market"}
+        selected = {
+            generate_assets._sfx_variant_filename(scene, index)
+            for index in range(3)
+        }
+        self.assertEqual(selected, set(setup_real_audio.SFX_VARIANTS["whoosh"]))
+
+    def test_master_mix_uses_different_sfx_variants_for_repeated_cues(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            asset_dir = os.path.join(temp_dir, "assets")
+            output_path = os.path.join(temp_dir, "master.mp3")
+            setup_real_audio.generate_audio_assets(asset_dir, duration=12)
+
+            def fake_ffmpeg(command, **kwargs):
+                with open(output_path, "wb") as audio_file:
+                    audio_file.write(b"mixed audio")
+                return Mock(returncode=0)
+
+            with (
+                patch.dict(os.environ, {"CINEMA_AUDIO_ASSET_DIR": asset_dir}),
+                patch.object(generate_assets.subprocess, "run", side_effect=fake_ffmpeg) as run,
+            ):
+                generate_assets.mix_final_audio(
+                    "voice.mp3",
+                    "score.mp3",
+                    output_path,
+                    [
+                        {"startSec": 0, "sfxCue": "whoosh", "headline": "Opening"},
+                        {"startSec": 2, "sfxCue": "whoosh", "headline": "Same cue"},
+                        {"startSec": 4, "sfxCue": "whoosh", "headline": "Same cue"},
+                        {"startSec": 6, "sfxCue": "whoosh", "headline": "Same cue"},
+                    ],
+                    8,
                 )
+
+        command = run.call_args.args[0]
+        effect_files = [
+            os.path.basename(command[index + 1])
+            for index, value in enumerate(command[:-1])
+            if value == "-i" and os.path.basename(command[index + 1]).startswith("sfx_whoosh")
+        ]
+        self.assertEqual(len(setup_real_audio.SFX_VARIANTS["whoosh"]), len(set(effect_files)))
 
     def test_voiceover_silence_trim_shortens_audio_and_retimes_words(self):
         ffmpeg = generate_assets._ffmpeg_executable()
@@ -307,6 +358,10 @@ class GenerateAssetsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = os.path.join(temp_dir, "scene.mp4")
             with (
+                patch.dict(
+                    os.environ,
+                    {"CINEMA_MEDIA_CACHE_DIR": os.path.join(temp_dir, "cache")},
+                ),
                 patch.object(generate_assets.requests, "get", return_value=response) as get,
                 patch.object(generate_assets, "_is_valid_mp4", return_value=True),
             ):
@@ -334,6 +389,10 @@ class GenerateAssetsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = os.path.join(temp_dir, "scene.mp4")
             with (
+                patch.dict(
+                    os.environ,
+                    {"CINEMA_MEDIA_CACHE_DIR": os.path.join(temp_dir, "cache")},
+                ),
                 patch.object(generate_assets.requests, "get", return_value=response),
                 patch.object(generate_assets.subprocess, "run", return_value=child_result) as run,
             ):
@@ -358,6 +417,10 @@ class GenerateAssetsTests(unittest.TestCase):
                 return child_result
 
             with (
+                patch.dict(
+                    os.environ,
+                    {"CINEMA_MEDIA_CACHE_DIR": os.path.join(temp_dir, "cache")},
+                ),
                 patch.object(generate_assets.requests, "get", return_value=response),
                 patch.object(generate_assets.subprocess, "run", side_effect=create_invalid_output),
                 patch.object(generate_assets, "_is_valid_mp4", return_value=False),
@@ -462,6 +525,41 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertIn("gold, bars, vault", prompt)
         self.assertIn("NO anime", prompt)
         self.assertIn("NO random portrait", prompt)
+
+    def test_visual_fetch_reuses_cached_image_without_calling_providers(self):
+        image = Mock(
+            status_code=200,
+            content=b"\xff\xd8" + b"x" * 6000,
+            headers={"Content-Type": "image/jpeg"},
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = os.getcwd()
+            os.chdir(temp_dir)
+            try:
+                with (
+                    patch.dict(
+                        os.environ,
+                        {
+                            "CINEMA_MEDIA_CACHE_DIR": os.path.join(temp_dir, "cache"),
+                            "CINEMA_OFFLINE": "",
+                        },
+                    ),
+                    patch.object(generate_assets, "try_archive_org_video", return_value=False),
+                    patch.object(generate_assets, "try_wikimedia_video", return_value=False),
+                    patch.object(generate_assets.requests, "get", return_value=image) as get,
+                ):
+                    first = generate_assets.fetch_broll_or_ai_visual(
+                        "cinematic gold bars in a vault", 1, "vertical"
+                    )
+                    second = generate_assets.fetch_broll_or_ai_visual(
+                        "CINEMATIC gold bars in a vault", 4, "vertical"
+                    )
+            finally:
+                os.chdir(original_dir)
+
+        self.assertEqual(first, ("media/scene_1.jpg", "image"))
+        self.assertEqual(second, ("media/scene_4_cached.jpg", "image"))
+        get.assert_called_once()
 
     def test_audio_vault_is_small_and_all_stems_decode(self):
         ffmpeg = generate_assets._ffmpeg_executable()

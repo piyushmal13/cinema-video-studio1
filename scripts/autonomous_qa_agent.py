@@ -57,6 +57,16 @@ def _check_video_data(data_path: Path, public_dir: Path) -> list[Path]:
         data.get("sfxWhooshFile"),
         data.get("sfxPopFile"),
     ]
+    sfx_files = data.get("sfxFiles", {})
+    if not isinstance(sfx_files, dict) or any(
+        not isinstance(variants, list)
+        or any(not isinstance(filename, str) for filename in variants)
+        for variants in sfx_files.values()
+    ):
+        raise ValueError("video_data.json must contain valid SFX variant lists.")
+    audio_names.extend(
+        filename for variants in sfx_files.values() for filename in variants
+    )
     audio_paths = [public_dir / name for name in audio_names if name]
     for path in audio_paths:
         if not path.is_file() or path.stat().st_size == 0:
@@ -161,10 +171,15 @@ def _run_isolated_pipeline() -> tuple[bool, str]:
         try:
             audio_paths = _check_video_data(public_dir / "video_data.json", public_dir)
             _verify_audio_decodes(audio_paths)
-            asset_paths = [audio_dir / filename for filename in (
-                "phonk_bed.mp3", "cinema_bed.mp3", "sfx_whoosh.mp3",
-                "sfx_boom.mp3", "sfx_pop.mp3",
-            )]
+            asset_names = {"phonk_bed.mp3", "cinema_bed.mp3"}
+            asset_names.update(
+                filename
+                for variants in json.loads(
+                    (public_dir / "video_data.json").read_text(encoding="utf-8")
+                )["sfxFiles"].values()
+                for filename in variants
+            )
+            asset_paths = [audio_dir / filename for filename in sorted(asset_names)]
             _verify_audio_decodes(asset_paths)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             return False, f"Generated schema/audio verification failed: {error}"

@@ -1,5 +1,6 @@
 node_modules/
 out/
+.cache/cinema-media/
 .Codex/
 __pycache__/
 **/__pycache__/

@@ -10,9 +10,21 @@ TRACKS = (
     "phonk_bed.mp3",
     "cinema_bed.mp3",
     "sfx_whoosh.mp3",
+    "sfx_whoosh_2.mp3",
+    "sfx_whoosh_3.mp3",
     "sfx_boom.mp3",
+    "sfx_boom_2.mp3",
+    "sfx_boom_3.mp3",
     "sfx_pop.mp3",
+    "sfx_pop_2.mp3",
+    "sfx_pop_3.mp3",
 )
+
+SFX_VARIANTS = {
+    "boom": ("sfx_boom.mp3", "sfx_boom_2.mp3", "sfx_boom_3.mp3"),
+    "whoosh": ("sfx_whoosh.mp3", "sfx_whoosh_2.mp3", "sfx_whoosh_3.mp3"),
+    "pulse": ("sfx_pop.mp3", "sfx_pop_2.mp3", "sfx_pop_3.mp3"),
+}
 
 
 def _ffmpeg_executable() -> str:
@@ -124,6 +136,22 @@ def generate_audio_assets(output_dir: str = "assets/audio", duration: float = 45
             "alimiter=limit=0.9[mix]",
             0.85,
         ),
+        "sfx_whoosh_2.mp3": (
+            "anoisesrc=color=brown:sample_rate=44100:duration=1.0",
+            "highpass=f=90,lowpass=f=5400,volume=0.58,"
+            "aecho=0.65:0.38:45:0.16,"
+            "afade=t=in:st=0:d=0.06,afade=t=out:st=0.62:d=0.38,"
+            "alimiter=limit=0.9[mix]",
+            1.0,
+        ),
+        "sfx_whoosh_3.mp3": (
+            "anoisesrc=color=pink:sample_rate=44100:duration=0.72",
+            "highpass=f=640,lowpass=f=11200,volume=0.42,"
+            "aecho=0.7:0.28:24:0.12,"
+            "afade=t=in:st=0:d=0.035,afade=t=out:st=0.42:d=0.3,"
+            "alimiter=limit=0.9[mix]",
+            0.72,
+        ),
         "sfx_boom.mp3": (
             "aevalsrc=0.32*sin(2*PI*48*t)*exp(-3.2*t)"
             "+0.09*sin(2*PI*96*t)*exp(-5*t):s=44100:d=1.5",
@@ -132,12 +160,43 @@ def generate_audio_assets(output_dir: str = "assets/audio", duration: float = 45
             "alimiter=limit=0.9[mix]",
             1.5,
         ),
+        "sfx_boom_2.mp3": (
+            "aevalsrc=0.29*sin(2*PI*38*t)*exp(-2.8*t)"
+            "+0.11*sin(2*PI*76*t)*exp(-4.4*t):s=44100:d=1.5",
+            "lowpass=f=210,aecho=0.68:0.6:92:0.28,"
+            "afade=t=in:st=0:d=0.02,afade=t=out:st=0.68:d=0.82,"
+            "alimiter=limit=0.9[mix]",
+            1.5,
+        ),
+        "sfx_boom_3.mp3": (
+            "aevalsrc=0.27*sin(2*PI*62*t)*exp(-3.6*t)"
+            "+0.08*sin(2*PI*124*t)*exp(-5.4*t):s=44100:d=1.2",
+            "lowpass=f=340,aecho=0.66:0.48:48:0.2,"
+            "afade=t=in:st=0:d=0.012,afade=t=out:st=0.56:d=0.64,"
+            "alimiter=limit=0.9[mix]",
+            1.2,
+        ),
         "sfx_pop.mp3": (
             "aevalsrc=0.14*(sin(2*PI*660*t)+0.45*sin(2*PI*990*t))"
             "*exp(-8*t):s=44100:d=0.42",
             "lowpass=f=3200,afade=t=in:st=0:d=0.01,"
             "afade=t=out:st=0.18:d=0.24,alimiter=limit=0.88[mix]",
             0.42,
+        ),
+        "sfx_pop_2.mp3": (
+            "aevalsrc=0.12*(sin(2*PI*520*t)+0.38*sin(2*PI*780*t))"
+            "*exp(-7*t):s=44100:d=0.5",
+            "lowpass=f=2600,aecho=0.7:0.35:38:0.12,"
+            "afade=t=in:st=0:d=0.01,afade=t=out:st=0.22:d=0.28,"
+            "alimiter=limit=0.88[mix]",
+            0.5,
+        ),
+        "sfx_pop_3.mp3": (
+            "aevalsrc=0.13*(sin(2*PI*740*t)+0.32*sin(2*PI*1110*t))"
+            "*exp(-9*t):s=44100:d=0.38",
+            "lowpass=f=3800,afade=t=in:st=0:d=0.008,"
+            "afade=t=out:st=0.16:d=0.22,alimiter=limit=0.88[mix]",
+            0.38,
         ),
     }
     for name, (source, filters, effect_duration) in effects.items():

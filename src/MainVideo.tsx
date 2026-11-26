@@ -88,12 +88,30 @@ const SubtitleOverlay: React.FC<{
 const SceneCardOverlay: React.FC<{
   scene: SceneItem;
   themeColor: string;
-}> = ({ scene, themeColor }) => {
+  sceneIndex: number;
+}> = ({ scene, themeColor, sceneIndex }) => {
   const frame = useCurrentFrame();
   const { fps, height } = useVideoConfig();
-  const opacity = Math.min(1, frame / 12);
-  const translateY = Math.max(0, 18 - frame * 1.5);
-  const headlineSize = Math.max(44, Math.min(68, height * 0.035));
+  const opacity =
+    scene.type === 'cinema_hero' ? 1 : Math.min(1, 0.25 + frame / 12);
+  const translateY =
+    scene.type === 'cinema_hero' ? 0 : Math.max(0, 18 - frame * 1.5);
+  const layout =
+    scene.type === 'cinema_hero'
+      ? 'hero'
+      : scene.type === 'step_list'
+        ? 'steps'
+        : scene.type === 'cinema_outro'
+          ? 'outro'
+          : scene.type === 'three_d_globe' || sceneIndex % 2 === 1
+            ? 'editorial'
+            : 'glass';
+  const headlineSize =
+    layout === 'hero'
+      ? Math.max(56, Math.min(104, height * 0.054))
+      : layout === 'editorial'
+        ? Math.max(42, Math.min(60, height * 0.032))
+        : Math.max(44, Math.min(68, height * 0.035));
   const statProgress = spring({ frame, fps, config: { damping: 16, stiffness: 85 } });
   const statMatch = scene.statValue?.match(/^(.*?)(-?[\d,]+(?:\.\d+)?)(.*)$/);
   const animatedStat = statMatch
@@ -110,7 +128,12 @@ const SceneCardOverlay: React.FC<{
         justifyContent: 'center',
         alignItems: 'center',
         boxSizing: 'border-box',
-        padding: '16% 7% 25%',
+        width: 'auto',
+        height: 'auto',
+        top: '16%',
+        bottom: '25%',
+        left: '7%',
+        right: '7%',
         opacity,
         transform: `translateY(${translateY}px)`,
         zIndex: 20,
@@ -120,19 +143,38 @@ const SceneCardOverlay: React.FC<{
       <div
         style={{
           width: '100%',
-          maxWidth: 960,
+          maxWidth: layout === 'hero' ? 1040 : 960,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          textAlign: 'center',
-          gap: 18,
-          padding: '30px 28px',
-          borderRadius: 28,
-          border: '1px solid transparent',
-          background: `linear-gradient(145deg, rgba(5,8,15,0.76), rgba(8,13,24,0.54)) padding-box, conic-gradient(from ${frame * 7}deg, ${themeColor}cc, transparent 24%, rgba(255,255,255,0.12) 48%, transparent 68%, ${themeColor}cc) border-box`,
+          alignItems: layout === 'hero' || layout === 'editorial' ? 'flex-start' : 'center',
+          textAlign: layout === 'hero' || layout === 'editorial' ? 'left' : 'center',
+          gap: layout === 'hero' ? 24 : 18,
+          padding: layout === 'hero' ? '36px 0 36px 30px' : '30px 28px',
+          borderRadius: layout === 'hero' || layout === 'editorial' ? 8 : 28,
+          border:
+            layout === 'hero'
+              ? 'none'
+              : layout === 'editorial'
+                ? `1px solid ${themeColor}88`
+                : '1px solid transparent',
+          borderLeft:
+            layout === 'hero' || layout === 'editorial'
+              ? `6px solid ${themeColor}`
+              : undefined,
+          background:
+            layout === 'hero'
+              ? 'linear-gradient(90deg, rgba(5,8,15,0.88), rgba(5,8,15,0.12))'
+              : layout === 'editorial'
+                ? 'linear-gradient(100deg, rgba(5,8,15,0.82), rgba(5,8,15,0.3))'
+                : layout === 'outro'
+                  ? `radial-gradient(ellipse at center, ${themeColor}2b, rgba(5,8,15,0.86) 72%)`
+                  : `linear-gradient(145deg, rgba(5,8,15,0.76), rgba(8,13,24,0.54)) padding-box, conic-gradient(from ${frame * 7}deg, ${themeColor}cc, transparent 24%, rgba(255,255,255,0.12) 48%, transparent 68%, ${themeColor}cc) border-box`,
           backgroundClip: 'padding-box, border-box',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
-          backdropFilter: 'blur(10px)',
+          boxShadow:
+            layout === 'hero' || layout === 'editorial'
+              ? `-18px 0 42px ${themeColor}22`
+              : '0 24px 80px rgba(0,0,0,0.35)',
+          backdropFilter: layout === 'hero' ? 'none' : 'blur(10px)',
         }}
       >
         {scene.kicker && (
@@ -183,6 +225,45 @@ const SceneCardOverlay: React.FC<{
           >
             {scene.subline}
           </p>
+        )}
+
+        {scene.type === 'step_list' && scene.bullets && scene.bullets.length > 0 && (
+          <div
+            style={{
+              display: 'grid',
+              gap: 12,
+              width: '100%',
+              marginTop: 6,
+              textAlign: 'left',
+            }}
+          >
+            {scene.bullets.slice(0, 4).map((bullet, index) => (
+              <div
+                key={`${index}-${bullet}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '12px 16px',
+                  borderLeft: `3px solid ${themeColor}`,
+                  background: 'rgba(2,6,12,0.72)',
+                  color: '#F8FAFC',
+                  fontSize: Math.max(20, Math.min(28, height * 0.015)),
+                  fontWeight: 700,
+                }}
+              >
+                <span
+                  style={{
+                    color: themeColor,
+                    font: '700 15px "JetBrains Mono", monospace',
+                  }}
+                >
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                {bullet}
+              </div>
+            ))}
+          </div>
         )}
 
         {scene.statValue && (
@@ -350,75 +431,90 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
       <TransitionSeries>
         {scenes.map((scene, index) => {
           const durationFrames = paddedDurations[index];
-        const cleanMedia = (scene.mediaFile || '').replace(/^\/?public\//, '');
+          const cleanMedia = (scene.mediaFile || '').replace(/^\/?public\//, '');
+          const cue =
+            scene.sfxCue === 'boom'
+              ? 'boom'
+              : scene.sfxCue === 'pulse'
+                ? 'pulse'
+                : 'whoosh';
+          const legacySfx =
+            cue === 'boom'
+              ? videoData.sfxBoomFile
+              : cue === 'pulse'
+                ? videoData.sfxPopFile
+                : videoData.sfxWhooshFile;
+          const sfxVariants = videoData.sfxFiles?.[cue] ?? (legacySfx ? [legacySfx] : []);
+          const sfxFile = sfxVariants.length
+            ? sfxVariants[(index + scene.headline.length) % sfxVariants.length]
+            : undefined;
 
-        return (
-          <React.Fragment key={`scene-${index}`}>
-            <TransitionSeries.Sequence durationInFrames={durationFrames}>
-              <AbsoluteFill>
-                <CinemaBackdrop
-                  mediaFile={cleanMedia}
-                  mediaKind={scene.mediaKind}
-                  cameraMotion={scene.cameraMotion}
-                  sceneType={scene.type}
-                  motionDurationInFrames={durationFrames}
-                  beatSync={videoData.beatSync}
-                  beatTimestamps={videoData.beatTimestamps}
-                  accentColor={themeColor}
-                  isCinemaMode={Boolean(videoData.isLandscape && videoData.mode === 'cinema')}
-                />
-                <ThreeDScenes
-                  sceneType={scene.type}
-                  themeColor={themeColor}
-                  barValues={scene.barValues}
-                />
-                <SceneCardOverlay scene={scene} themeColor={themeColor} />
-                {index > 0 && !videoData.masterAudioFile && (
-                  <Sequence
-                    from={0}
-                    durationInFrames={Math.min(durationFrames, Math.ceil(fps * 1.6))}
-                    layout="none"
-                  >
-                    {scene.sfxCue === 'boom' && videoData.sfxBoomFile ? (
-                      <Audio src={staticFile(videoData.sfxBoomFile)} volume={0.52} />
-                    ) : scene.sfxCue === 'pulse' && videoData.sfxPopFile ? (
-                      <Audio src={staticFile(videoData.sfxPopFile)} volume={0.42} />
-                    ) : videoData.sfxWhooshFile ? (
-                      <Audio src={staticFile(videoData.sfxWhooshFile)} volume={0.42} />
-                    ) : null}
-                  </Sequence>
-                )}
-                <TransitionFlash />
-              </AbsoluteFill>
-            </TransitionSeries.Sequence>
-            {index < scenes.length - 1 &&
-              (index % 3 === 0 ? (
-                <TransitionSeries.Transition
-                  presentation={fade()}
-                  timing={springTiming({
-                    durationInFrames: transitionFrames,
-                    config: { damping: 200 },
-                  })}
-                />
-              ) : index % 3 === 1 ? (
-                <TransitionSeries.Transition
-                  presentation={slide({ direction: 'from-right' })}
-                  timing={springTiming({
-                    durationInFrames: transitionFrames,
-                    config: { damping: 200 },
-                  })}
-                />
-              ) : (
-                <TransitionSeries.Transition
-                  presentation={wipe({ direction: 'from-left' })}
-                  timing={springTiming({
-                    durationInFrames: transitionFrames,
-                    config: { damping: 200 },
-                  })}
-                />
-              ))}
-          </React.Fragment>
-        );
+          return (
+            <React.Fragment key={`scene-${index}`}>
+              <TransitionSeries.Sequence durationInFrames={durationFrames}>
+                <AbsoluteFill>
+                  <CinemaBackdrop
+                    mediaFile={cleanMedia}
+                    mediaKind={scene.mediaKind}
+                    cameraMotion={scene.cameraMotion}
+                    sceneType={scene.type}
+                    sceneIndex={index}
+                    motionDurationInFrames={durationFrames}
+                    beatSync={videoData.beatSync}
+                    beatTimestamps={videoData.beatTimestamps}
+                    accentColor={themeColor}
+                    isCinemaMode={Boolean(videoData.isLandscape && videoData.mode === 'cinema')}
+                  />
+                  <ThreeDScenes
+                    sceneType={scene.type}
+                    themeColor={themeColor}
+                    barValues={scene.barValues}
+                    sceneIndex={index}
+                  />
+                  <SceneCardOverlay scene={scene} themeColor={themeColor} sceneIndex={index} />
+                  {index > 0 && !videoData.masterAudioFile && sfxFile && (
+                    <Sequence
+                      from={0}
+                      durationInFrames={Math.min(durationFrames, Math.ceil(fps * 1.6))}
+                      layout="none"
+                    >
+                      <Audio
+                        src={staticFile(sfxFile)}
+                        volume={cue === 'boom' ? 0.52 : cue === 'pulse' ? 0.42 : 0.42}
+                      />
+                    </Sequence>
+                  )}
+                  <TransitionFlash />
+                </AbsoluteFill>
+              </TransitionSeries.Sequence>
+              {index < scenes.length - 1 &&
+                (index % 3 === 0 ? (
+                  <TransitionSeries.Transition
+                    presentation={fade()}
+                    timing={springTiming({
+                      durationInFrames: transitionFrames,
+                      config: { damping: 200 },
+                    })}
+                  />
+                ) : index % 3 === 1 ? (
+                  <TransitionSeries.Transition
+                    presentation={slide({ direction: 'from-right' })}
+                    timing={springTiming({
+                      durationInFrames: transitionFrames,
+                      config: { damping: 200 },
+                    })}
+                  />
+                ) : (
+                  <TransitionSeries.Transition
+                    presentation={wipe({ direction: 'from-left' })}
+                    timing={springTiming({
+                      durationInFrames: transitionFrames,
+                      config: { damping: 200 },
+                    })}
+                  />
+                ))}
+            </React.Fragment>
+          );
         })}
       </TransitionSeries>
 
