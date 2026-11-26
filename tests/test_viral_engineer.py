@@ -70,7 +70,8 @@ class ViralEngineerTests(unittest.TestCase):
         prompt = enhance_story_prompt("Explain gold", plan)
 
         self.assertIn("Explain gold", prompt)
-        self.assertIn("exactly 10 scenes", prompt)
+        self.assertIn("approximately 10 scenes", prompt)
+        self.assertIn("between 6 and 13", prompt)
         self.assertIn("pattern-interrupt hook", prompt)
 
 

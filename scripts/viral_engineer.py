@@ -124,9 +124,9 @@ def enhance_story_prompt(prompt: str, plan: ViralPlan) -> str:
     parts = [prompt.strip(), plan.system_instruction]
     if plan.fast_cuts:
         parts.append(
-            f"Create exactly {plan.scene_count} scenes for approximately 3-second "
-            "cuts. Give every scene a distinct "
-            "purpose, headline, and visual query. Keep the narration complete."
+            f"Aim for approximately {plan.scene_count} scenes with roughly 3-second "
+            "cuts, while keeping the final scene count between 6 and 13. Give every "
+            "scene a distinct purpose, headline, and visual query. Keep the narration complete."
         )
     if plan.trending_context:
         parts.append(plan.trending_context)

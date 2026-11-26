@@ -157,7 +157,6 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
 def validate_storyboard(
     storyboard: dict,
     min_narration_words: int,
-    scene_count_range: tuple[int, int] = (5, 7),
 ) -> dict:
     if not isinstance(storyboard, dict):
         raise ValueError("The AI response must be a JSON object.")
@@ -172,13 +171,9 @@ def validate_storyboard(
             f"Narration is too short: {word_count} words; "
             f"at least {min_narration_words} are required."
         )
-    min_scenes, max_scenes = scene_count_range
-    if not isinstance(scenes, list) or not min_scenes <= len(scenes) <= max_scenes:
-        if min_scenes == max_scenes:
-            requirement = f"exactly {min_scenes}"
-        else:
-            requirement = f"{min_scenes} to {max_scenes}"
-        raise ValueError(f"The AI response must contain {requirement} scenes.")
+    if not isinstance(scenes, list) or not scenes:
+        raise ValueError("The AI response must contain at least one scene.")
+    scenes = [dict(scene) if isinstance(scene, dict) else scene for scene in scenes[:13]]
 
     valid_types = {
         "cinema_hero",
@@ -207,10 +202,11 @@ def validate_storyboard(
         if scene.get("sfxCue") not in valid_cues:
             raise ValueError(f"Scene {index + 1} has an unsupported sound cue.")
         weight = scene.get("weight")
-        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
-            raise ValueError(f"Scene {index + 1} weight must be a number.")
-        if not math.isfinite(weight) or weight <= 0:
-            raise ValueError(f"Scene {index + 1} weight must be a positive finite number.")
+        try:
+            weight = float(weight) if not isinstance(weight, bool) else 0.0
+        except (TypeError, ValueError, OverflowError):
+            weight = 0.0
+        scene["weight"] = weight if math.isfinite(weight) and weight > 0 else 1.0
 
         bars = scene.get("barValues")
         if bars is not None:
@@ -227,6 +223,30 @@ def validate_storyboard(
                 ):
                     raise ValueError(f"Scene {index + 1} contains invalid chart data.")
 
+    while len(scenes) < 3:
+        split_index = max(
+            range(len(scenes)),
+            key=lambda index: scenes[index]["weight"],
+        )
+        original = scenes[split_index]
+        split_weight = original["weight"] / 2
+        original["weight"] = split_weight
+        duplicate = dict(original)
+        duplicate["weight"] = split_weight
+        scenes.insert(split_index + 1, duplicate)
+
+    weights = [scene["weight"] for scene in scenes]
+    max_weight = max(weights)
+    scaled_weights = [weight / max_weight for weight in weights]
+    total_weight = math.fsum(scaled_weights)
+    normalized_weights = [round(weight / total_weight, 12) for weight in scaled_weights]
+    normalized_weights[max(range(len(weights)), key=weights.__getitem__)] += (
+        1.0 - sum(normalized_weights)
+    )
+    for scene, weight in zip(scenes, normalized_weights):
+        scene["weight"] = weight
+
+    storyboard["scenes"] = scenes
     return storyboard
 
 

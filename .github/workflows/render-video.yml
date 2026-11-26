@@ -37,7 +37,7 @@ jobs:
           if ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
 
       - name: Verify Gradio video client
-        run: python -c "import gradio_client; print('gradio-client ready')"
+        run: python -c "import gradio_client, gtts, mutagen; print('video and TTS fallbacks ready')"
 
       - name: Direct Film, Fetch AI Cinema Visuals, Synthesize Voice & Score
         env:

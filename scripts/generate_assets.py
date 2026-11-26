@@ -1,14 +1,19 @@
 import asyncio
+import html
 import json
+import math
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
+import unicodedata
 import urllib.parse
+
 import requests
 import edge_tts
+from gtts import gTTS
 if __package__:
     from .prompt_intent import compose_story_prompt, parse_prompt_intent, validate_storyboard
     from .viral_engineer import (
@@ -69,12 +74,120 @@ def clean_json_response(raw_text: str) -> dict:
     return json.loads(cleaned)
 
 
+def build_fallback_storyboard(
+    prompt: str,
+    brand: str,
+    color: str,
+    mode: str,
+    is_hinglish: bool,
+    min_words: int = 60,
+) -> dict:
+    latest_request = re.search(
+        r"Latest request:\s*(.*?)(?:\n\n|$)", prompt, re.IGNORECASE | re.DOTALL
+    )
+    brief = latest_request.group(1) if latest_request else prompt.split("\n\n", 1)[0]
+    brief = re.sub(r"/(?:video|movie|cinema|reel)(?:@\w+)?", " ", brief, flags=re.IGNORECASE)
+    brief = re.sub(r"--[\w=-]+", " ", brief)
+    brief = re.sub(
+        r"^\s*(?:please\s+)?(?:explain|create|make|write|generate|produce|show|tell me about)\s+",
+        "",
+        brief,
+        flags=re.IGNORECASE,
+    )
+    brief = re.sub(
+        r"^\s*(?:how|why|what|a|an|the|short|viral|video|film|reel|about|on)\s+",
+        "",
+        brief,
+        flags=re.IGNORECASE,
+    )
+    brief = re.sub(r"\b\d+(?:\.\d+)?[\s-]*(?:seconds?|secs?|minutes?|mins?)\b", " ", brief, flags=re.IGNORECASE)
+    topic_words = re.findall(r"[\w'-]+", brief, flags=re.UNICODE)[:8]
+    topic = " ".join(topic_words) or "the core idea"
+
+    if is_hinglish:
+        narration_parts = [
+            f"Aaj hum {topic} ko seedhe samjhenge, bina bade claims ya shortcut ke.",
+            "Pehle core idea ko simple language mein define karein, aur facts ko assumptions se alag rakhein.",
+            "Phir process ko step by step follow karein, taaki har decision ka connection clear ho.",
+            "Ek practical example mechanism samjhata hai, bina numbers invent kiye ya outcome promise kiye.",
+            "Kisi bhi decision se pehle signal, constraint, aur trade-off ko saath mein dekhein.",
+            "Institutional edge disciplined reasoning hai: evidence check karein, alternatives compare karein, uncertainty clear rakhein.",
+            "Information badle toh conclusion ko update karein, purane view ko force na karein.",
+            "Takeaway simple hai: mechanism samjhein, assumptions test karein, aur next step soch samajh kar lein.",
+        ]
+        extensions = [
+            f"{topic} ko evidence, timing, incentives, aur risk ke lens se dobara dekhein.",
+            "Jo unknown hai use clearly name karein, aur unsupported certainty se bachein.",
+            "Har alternative ko same standard se compare karein, phir conclusion ko calmly update karein.",
+        ]
+    else:
+        narration_parts = [
+            f"This film examines {topic} by starting with the real question, not a dramatic claim or shortcut.",
+            "First, define the core idea in plain language and separate verified details from assumptions.",
+            "Next, follow the process step by step so viewers can see how each decision connects.",
+            "A useful example makes the mechanism easier to understand without inventing numbers or promising an outcome.",
+            "Look for the signal, the constraint, and the trade-off before deciding what deserves attention.",
+            "The institutional edge is disciplined reasoning: check evidence, compare alternatives, and keep uncertainty visible.",
+            "If the information changes, revisit the conclusion instead of defending a view that no longer fits.",
+            "The takeaway is practical: understand the mechanism, test assumptions, and make the next move deliberately.",
+        ]
+        extensions = [
+            f"Revisit {topic} through evidence, timing, incentives, and risk, while naming what remains unknown.",
+            "Compare each alternative using the same standard, then update the conclusion when the evidence changes.",
+            "A careful review separates a useful signal from an assumption and keeps the next question visible.",
+        ]
+
+    narration = " ".join(narration_parts)
+    extension_index = 0
+    target_words = max(60, min_words)
+    while len(narration.split()) < target_words:
+        narration += " " + extensions[extension_index % len(extensions)]
+        extension_index += 1
+
+    scene_specs = [
+        ("cinema_hero", "THE QUESTION", "START WITH THE CORE IDEA", "central idea emerging through cinematic shadows", "dolly_push", "boom"),
+        ("three_d_globe", "THE CONTEXT", "CONNECT THE BIG PICTURE", "global network linking ideas across borders", "pan_left", "whoosh"),
+        ("three_d_bars", "THE MECHANISM", "FOLLOW EACH STEP", "process diagram illuminated in a dark studio", "zoom_in", "pulse"),
+        ("candlestick_chart", "THE SIGNAL", "SEPARATE SIGNAL FROM NOISE", "animated market candles crossing liquidity zones", "pan_right", "whoosh"),
+        ("split_compare", "THE TRADE-OFF", "COMPARE THE ALTERNATIVES", "two contrasting strategies under focused light", "zoom_out", "pulse"),
+        ("step_list", "THE STANDARD", "TEST THE ASSUMPTIONS", "evidence checklist beside a research notebook", "dolly_push", "whoosh"),
+        ("three_d_globe", "THE DECISION", "MAKE THE NEXT MOVE", "risk controls shaping deliberate decisions", "pan_left", "pulse"),
+        ("cinema_outro", "THE TAKEAWAY", "RETURN TO THE CORE IDEA", "golden horizon framing a clear conclusion", "zoom_out", "boom"),
+    ]
+    scenes = [
+        {
+            "type": scene_type,
+            "weight": 1.0,
+            "kicker": kicker,
+            "headline": headline,
+            "subline": f"A focused look at {topic}." if index in {0, 7} else "",
+            "visualQuery": visual_query,
+            "cameraMotion": motion,
+            "sfxCue": cue,
+        }
+        for index, (scene_type, kicker, headline, visual_query, motion, cue)
+        in enumerate(scene_specs)
+    ]
+    return {
+        "title": f"{topic.title()} | Signal to Strategy",
+        "brandTag": brand,
+        "themeColor": color,
+        "mode": mode,
+        "narration": narration,
+        "scenes": scenes,
+    }
+
+
 def generate_storyboard(
     prompt: str,
     sys_prompt: str,
     min_narration_words: int,
-    scene_count_range: tuple[int, int] = (5, 7),
+    brand: str = "IFXTRADES",
+    color: str = "#D4AF37",
+    mode: str = "shorts",
+    is_hinglish: bool = False,
 ) -> dict:
+    minimum_words = max(60, min_narration_words)
     # Primary: keyless Pollinations. Its public free tier can impose cooldowns.
     pollinations_error = None
     free_model = "openai"
@@ -123,8 +236,7 @@ def generate_storyboard(
             raw_text = resp.json()["choices"][0]["message"]["content"]
             storyboard = validate_storyboard(
                 clean_json_response(raw_text),
-                min_narration_words,
-                scene_count_range=scene_count_range,
+                minimum_words,
             )
             print(f"Directed with Pollinations Free ({free_model})")
             return storyboard
@@ -132,26 +244,24 @@ def generate_storyboard(
             pollinations_error = str(e)
             print(f"Pollinations {free_model} response rejected: {e}")
             if attempt == 0:
-                scene_requirement = (
-                    f"exactly {scene_count_range[0]}"
-                    if scene_count_range[0] == scene_count_range[1]
-                    else f"{scene_count_range[0]} to {scene_count_range[1]}"
-                )
                 retry_prompt = (
                     f"{prompt}\n\nThe previous response was rejected: {e}. "
                     f"Return a complete corrected JSON object. The narration must "
-                    f"contain at least {min_narration_words} words. Include "
-                    f"{scene_requirement} scenes. Do not shorten it."
+                    f"contain at least {minimum_words} words and include "
+                    "between 3 and 13 complete scenes. Do not shorten it."
                 )
                 time.sleep(46)
 
     if GEMINI_API_KEY:
         for model_id in ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]:
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={GEMINI_API_KEY}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
                 resp = requests.post(
                     url,
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": GEMINI_API_KEY,
+                    },
                     json={
                         "contents": [{"parts": [{"text": f"{sys_prompt}\n\nUser request: {prompt}"}]}],
                         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.5},
@@ -163,17 +273,23 @@ def generate_storyboard(
                     print(f"Directed with Gemini fallback ({model_id})")
                     return validate_storyboard(
                         clean_json_response(raw_text),
-                        min_narration_words,
-                        scene_count_range=scene_count_range,
+                        minimum_words,
                     )
                 print(f"Gemini {model_id} status {resp.status_code}: {resp.text[:200]}")
             except Exception as e:
                 print(f"Gemini {model_id} error: {e}")
 
     detail = f" Pollinations error: {pollinations_error}" if pollinations_error else ""
-    if not GEMINI_API_KEY:
-        raise RuntimeError(f"No valid storyboard was returned by the free provider.{detail}")
-    raise RuntimeError(f"All AI providers failed to return valid JSON.{detail}")
+    print(f"AI storyboard providers unavailable; using deterministic fallback.{detail}")
+    fallback = build_fallback_storyboard(
+        prompt,
+        brand,
+        color,
+        mode,
+        is_hinglish,
+        min_words=minimum_words,
+    )
+    return validate_storyboard(fallback, minimum_words)
 
 
 _GRADIO_VIDEO_SCRIPT = r"""
@@ -563,36 +679,164 @@ def synthesize_ambient_cinema_score(
     if not os.path.isfile(out_mp3) or os.path.getsize(out_mp3) == 0:
         raise RuntimeError("FFmpeg completed without producing the ambient score.")
 
-async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
-    communicate = edge_tts.Communicate(
-        text,
-        voice,
-        rate="+0%",
-        pitch="-2Hz",
-        boundary="WordBoundary",
+def sanitize_narration(text: str) -> str:
+    cleaned = html.unescape(str(text or ""))
+    cleaned = re.sub(r"```[\w-]*\s*([\s\S]*?)```", r"\1", cleaned)
+    cleaned = re.sub(r"!?\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
+    cleaned = re.sub(r"\[[^\]]*\]|\([^)]*\)|\{[^}]*\}", " ", cleaned)
+    cleaned = re.sub(r"(?m)^\s*(?:#{1,6}\s*|>\s*|[-*+]\s+)", "", cleaned)
+    cleaned = re.sub(r"[*_`~#>|]", " ", cleaned)
+    cleaned = "".join(
+        character
+        if unicodedata.category(character)[0] in {"L", "M", "N", "P", "Z"}
+        else " "
+        for character in cleaned
     )
-    words = []
-    max_end = 0.0
-    with open(out_mp3, "wb") as f:
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                f.write(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
-                start_sec = chunk["offset"] / 10_000_000.0
-                dur_sec = chunk["duration"] / 10_000_000.0
-                end_sec = start_sec + dur_sec
-                words.append({
-                    "word": chunk["text"],
-                    "start": round(start_sec, 3),
-                    "end": round(end_sec, 3),
-                })
-                if end_sec > max_end:
-                    max_end = end_sec
-    if not os.path.isfile(out_mp3) or os.path.getsize(out_mp3) == 0:
-        raise RuntimeError("Text-to-speech returned no audio.")
-    if not words:
-        raise RuntimeError("Text-to-speech returned no word timings for captions.")
-    return words, max(max_end + 0.8, 6.0)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not re.search(r"[\w\u0900-\u097f]", cleaned):
+        raise ValueError("Narration contains no speakable text after sanitization.")
+    return cleaned
+
+
+def _audio_duration_seconds(path: str) -> float:
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe:
+        try:
+            result = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    path,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                duration = float(result.stdout.strip())
+                if math.isfinite(duration) and duration > 0:
+                    return duration
+        except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+            print(f"ffprobe could not read TTS duration; trying mutagen: {error}")
+
+    try:
+        from mutagen.mp3 import MP3
+
+        duration = float(MP3(path).info.length)
+    except (ImportError, OSError, ValueError) as error:
+        raise RuntimeError(
+            "Could not read TTS duration; install ffprobe or the mutagen dependency."
+        ) from error
+    if not math.isfinite(duration) or duration <= 0:
+        raise RuntimeError("The generated TTS file has an invalid audio duration.")
+    return duration
+
+
+def _estimated_word_timings(text: str, duration: float) -> list[dict]:
+    tokens = text.split()
+    interval = duration / len(tokens)
+    return [
+        {
+            "word": word,
+            "start": round(index * interval, 3),
+            "end": round(duration if index == len(tokens) - 1 else (index + 1) * interval, 3),
+        }
+        for index, word in enumerate(tokens)
+    ]
+
+
+async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
+    cleaned_text = sanitize_narration(text)
+    if voice.startswith(("hi-IN-", "en-IN-")):
+        fallback_voices = [
+            "hi-IN-MadhurNeural",
+            "hi-IN-SwaraNeural",
+            "en-IN-PrabhatNeural",
+        ]
+    else:
+        fallback_voices = [
+            "en-US-AndrewMultilingualNeural",
+            "en-US-GuyNeural",
+            "en-US-ChristopherNeural",
+            "en-GB-RyanNeural",
+        ]
+    voices = list(dict.fromkeys([voice, *fallback_voices]))
+    temporary_path = f"{out_mp3}.tmp.mp3"
+    os.makedirs(os.path.dirname(out_mp3) or ".", exist_ok=True)
+    edge_errors = []
+
+    for candidate_voice in voices:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
+        words = []
+        max_end = 0.0
+        try:
+            communicate = edge_tts.Communicate(
+                cleaned_text,
+                candidate_voice,
+                rate="+0%",
+                pitch="-2Hz",
+                boundary="WordBoundary",
+            )
+            with open(temporary_path, "wb") as audio_file:
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_file.write(chunk["data"])
+                    elif chunk["type"] == "WordBoundary":
+                        start_sec = chunk["offset"] / 10_000_000.0
+                        end_sec = start_sec + chunk["duration"] / 10_000_000.0
+                        words.append(
+                            {
+                                "word": chunk["text"],
+                                "start": round(start_sec, 3),
+                                "end": round(end_sec, 3),
+                            }
+                        )
+                        max_end = max(max_end, end_sec)
+            if not os.path.isfile(temporary_path) or os.path.getsize(temporary_path) == 0:
+                raise RuntimeError("Edge TTS returned no audio bytes.")
+            if not words:
+                raise RuntimeError("Edge TTS returned no word-boundary timings.")
+            os.replace(temporary_path, out_mp3)
+            print(f"Generated voiceover with Edge TTS ({candidate_voice}).")
+            return words, max(max_end + 0.8, 6.0)
+        except Exception as error:
+            error_detail = str(error).strip() or type(error).__name__
+            edge_errors.append(f"{candidate_voice}: {error_detail}")
+            print(
+                f"Edge TTS voice failed ({candidate_voice}); "
+                f"trying the next voice: {error_detail}"
+            )
+        finally:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
+
+    if os.path.exists(temporary_path):
+        os.remove(temporary_path)
+    try:
+        language = "hi" if voice.startswith("hi-IN-") else "en"
+        fallback_tts = gTTS(text=cleaned_text, lang=language)
+        await asyncio.to_thread(fallback_tts.save, temporary_path)
+        if not os.path.isfile(temporary_path) or os.path.getsize(temporary_path) == 0:
+            raise RuntimeError("gTTS returned no audio bytes.")
+        duration = await asyncio.to_thread(_audio_duration_seconds, temporary_path)
+        os.replace(temporary_path, out_mp3)
+        print(f"Generated voiceover with gTTS ({language}).")
+        return _estimated_word_timings(cleaned_text, duration), duration
+    except Exception as error:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
+        failures = "; ".join(edge_errors)
+        raise RuntimeError(
+            f"All Edge TTS voices and the gTTS fallback failed. "
+            f"Edge errors: {failures}. gTTS error: {error}"
+        ) from error
 
 def main():
     trending_context = ""
@@ -613,20 +857,11 @@ def main():
         intent.duration_sec,
         trending_context=trending_context,
     )
-    scene_count_range = (
-        (viral_plan.scene_count, viral_plan.scene_count)
-        if viral_plan.fast_cuts
-        else (5, 7)
-    )
-    scene_count_instruction = (
-        f"exactly {scene_count_range[0]}"
-        if scene_count_range[0] == scene_count_range[1]
-        else f"{scene_count_range[0]} to {scene_count_range[1]}"
-    )
+    scene_count_instruction = "6 to 13" if viral_plan.fast_cuts else "5 to 13"
 
     sys_prompt = SYSTEM_PROMPT.format(
         target_words=intent.target_words,
-        min_narration_words=intent.min_narration_words,
+        min_narration_words=max(60, intent.min_narration_words),
         scene_count_instruction=scene_count_instruction,
         lang_instruction=intent.lang_instruction,
         style_instruction=viral_plan.system_instruction,
@@ -644,9 +879,12 @@ def main():
         full_prompt,
         sys_prompt,
         intent.min_narration_words,
-        scene_count_range=scene_count_range,
+        brand=intent.brand,
+        color=intent.color,
+        mode=intent.mode,
+        is_hinglish=intent.voice.startswith(("hi-IN-", "en-IN-")),
     )
-    narration = re.sub(r"\s+", " ", storyboard["narration"]).strip()
+    narration = sanitize_narration(storyboard["narration"])
 
     words, total_duration = asyncio.run(
         synthesize_voice_and_timings(narration, intent.voice, "public/voiceover.mp3")

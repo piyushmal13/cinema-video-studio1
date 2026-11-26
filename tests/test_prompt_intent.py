@@ -85,11 +85,43 @@ class PromptIntentTests(unittest.TestCase):
                 {"narration": "Too short.", "scenes": scenes},
                 10,
             )
-        with self.assertRaisesRegex(ValueError, "5 to 7 scenes"):
-            validate_storyboard(
-                {"narration": "Enough narration words for this validation case.", "scenes": scenes[:4]},
-                1,
-            )
+        short_count = validate_storyboard(
+            {"narration": "Enough narration words for this validation case.", "scenes": scenes[:4]},
+            1,
+        )
+        self.assertEqual(len(short_count["scenes"]), 4)
+        self.assertAlmostEqual(sum(scene["weight"] for scene in short_count["scenes"]), 1.0)
+
+    def test_storyboard_scene_counts_are_padded_trimmed_and_weights_normalized(self):
+        base_scene = {
+            "type": "cinema_hero",
+            "weight": 4,
+            "kicker": "OPENING",
+            "headline": "Scene",
+            "visualQuery": "cinematic ocean waves at night",
+            "cameraMotion": "zoom_in",
+            "sfxCue": "whoosh",
+        }
+        narration = "Enough narration words for flexible scene count normalization."
+
+        padded = validate_storyboard(
+            {"narration": narration, "scenes": [dict(base_scene)]},
+            1,
+        )
+        self.assertEqual(len(padded["scenes"]), 3)
+        self.assertEqual([scene["weight"] for scene in padded["scenes"]], [0.25, 0.25, 0.5])
+
+        many_scenes = [
+            {**base_scene, "weight": index if index % 2 else 0}
+            for index in range(1, 17)
+        ]
+        normalized = validate_storyboard(
+            {"narration": narration, "scenes": many_scenes},
+            1,
+        )
+        self.assertEqual(len(normalized["scenes"]), 13)
+        self.assertAlmostEqual(sum(scene["weight"] for scene in normalized["scenes"]), 1.0)
+        self.assertTrue(all(scene["weight"] > 0 for scene in normalized["scenes"]))
 
     def test_storyboard_rejects_bad_chart_data(self):
         scenes = [

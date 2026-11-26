@@ -4,7 +4,7 @@ Turn a Telegram idea, story, or supplied script into a narrated, captioned MP4:
 
 - Natural-language requests select vertical or widescreen format, runtime, Hindi/Hinglish or English narration, and male/female voice.
 - The director builds a complete narration and scene plan: 5–7 scenes for cinema, or 5–24 fast-cut scenes for short-form; supplied scripts keep their key facts and meaning.
-- Free Edge TTS speech and word timings drive the narration and captions. FFmpeg creates an original ambient score and scene-transition effects without paid audio APIs.
+- Edge TTS tries language-matched neural voices first; if they fail, keyless gTTS supplies speech and timestamps are estimated from the MP3 duration. FFmpeg creates an original ambient score and scene-transition effects without paid audio APIs.
 - Pollinations generates topic-specific images without an API key; cinematic gradients and procedural 3D scenes keep renders working when image generation is unavailable.
 - The animated XAUUSD chart is illustrative, not a live quote feed. Image resolution depends on provider support and is not guaranteed to be 8K.
 - Short-form prompts use fast viral pacing and phonk-style procedural scoring by default. `--meme`, `--movie`/`--cinema`, `--hinglish`, and `--trending` select alternate treatments or optional Google Trends context.

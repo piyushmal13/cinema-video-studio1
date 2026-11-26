@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -5,10 +6,37 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
+from edge_tts.exceptions import NoAudioReceived
+
 from scripts import generate_assets
+
+VALID_NARRATION = (
+    "Across this short film, viewers get clear context before reaching the conclusion. "
+    "The opening frames the question, then separates known information from assumptions. "
+    "Each section explains one step and shows how the ideas connect. "
+    "A practical example makes the process easier to follow without inventing statistics. "
+    "The ending highlights the main takeaway and a careful next question. "
+    "The script avoids unsupported claims and keeps the reasoning direct, understandable, "
+    "and specific to the requested topic."
+)
 
 
 class GenerateAssetsTests(unittest.TestCase):
+    @staticmethod
+    def _scenes(count):
+        return [
+            {
+                "type": "cinema_hero",
+                "weight": 1,
+                "kicker": f"BEAT {index}",
+                "headline": f"Scene {index}",
+                "visualQuery": "cinematic ocean waves at night",
+                "cameraMotion": "zoom_in",
+                "sfxCue": "whoosh",
+            }
+            for index in range(count)
+        ]
+
     def test_ffmpeg_synthesizes_decodable_phonk_and_cinema_scores(self):
         ffmpeg = generate_assets._ffmpeg_executable()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -49,7 +77,7 @@ class GenerateAssetsTests(unittest.TestCase):
             for index in range(5)
         ]
         storyboard = {
-            "narration": "A complete narration with enough words for this test case.",
+            "narration": VALID_NARRATION,
             "scenes": scenes,
         }
         response = Mock(
@@ -69,6 +97,171 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertEqual(post.call_args.args[0], "https://text.pollinations.ai/openai")
         self.assertEqual(post.call_args.kwargs["json"]["response_format"], {"type": "json_object"})
         self.assertEqual(post.call_args.kwargs["json"]["max_tokens"], 8192)
+
+    def test_pollinations_accepts_sixteen_scenes_and_trims_to_thirteen(self):
+        storyboard = {
+            "narration": VALID_NARRATION,
+            "scenes": self._scenes(16),
+        }
+        response = Mock(
+            status_code=200,
+            json=lambda: {
+                "choices": [{"message": {"content": json.dumps(storyboard)}}]
+            },
+        )
+
+        with (
+            patch.object(generate_assets, "GEMINI_API_KEY", ""),
+            patch.object(generate_assets.requests, "post", return_value=response),
+        ):
+            result = generate_assets.generate_storyboard(
+                "A focused film about gold-market liquidity", "system", 5
+            )
+
+        self.assertEqual(len(result["scenes"]), 13)
+        self.assertAlmostEqual(sum(scene["weight"] for scene in result["scenes"]), 1.0)
+
+    def test_provider_errors_use_deterministic_storyboard_fallback(self):
+        malformed = Mock(
+            status_code=200,
+            json=lambda: {"choices": [{"message": {"content": "not valid JSON"}}]},
+        )
+        service_unavailable = Mock(status_code=503, text="temporarily unavailable")
+        rate_limited = Mock(status_code=429, text="try again later")
+
+        with (
+            patch.object(generate_assets, "GEMINI_API_KEY", "test-gemini-key"),
+            patch.object(
+                generate_assets.requests,
+                "post",
+                side_effect=[
+                    malformed,
+                    malformed,
+                    service_unavailable,
+                    rate_limited,
+                    service_unavailable,
+                ],
+            ),
+            patch.object(generate_assets.time, "sleep"),
+        ):
+            result = generate_assets.generate_storyboard(
+                "Explain how gold-market liquidity works",
+                "system",
+                75,
+                brand="IFXTRADES",
+                color="#D4AF37",
+                mode="shorts",
+                is_hinglish=False,
+            )
+
+        self.assertGreaterEqual(len(result["narration"].split()), 75)
+        self.assertEqual(len(result["scenes"]), 8)
+        self.assertAlmostEqual(sum(scene["weight"] for scene in result["scenes"]), 1.0)
+        self.assertIn("gold-market liquidity", result["narration"].lower())
+
+    def test_deterministic_fallback_supports_hinglish_and_runtime_word_target(self):
+        result = generate_assets.build_fallback_storyboard(
+            "Aaj gold market ko samjhao",
+            "IFXTRADES",
+            "#D4AF37",
+            "shorts",
+            True,
+            min_words=150,
+        )
+
+        self.assertGreaterEqual(len(result["narration"].split()), 150)
+        self.assertIn("Aaj hum", result["narration"])
+        self.assertEqual(len(result["scenes"]), 8)
+
+    def test_edge_no_audio_retries_voices_then_uses_gtts_with_word_timings(self):
+        class NoAudioCommunicate:
+            async def stream(self):
+                raise NoAudioReceived()
+                yield {}
+
+        class FakeGTTS:
+            def __init__(self, text, lang):
+                self.text = text
+                self.lang = lang
+
+            def save(self, path):
+                with open(path, "wb") as audio_file:
+                    audio_file.write(b"mock mp3 bytes")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = os.path.join(temp_dir, "voiceover.mp3")
+            with (
+                patch.object(
+                    generate_assets.edge_tts,
+                    "Communicate",
+                    side_effect=lambda *args, **kwargs: NoAudioCommunicate(),
+                ) as communicate,
+                patch.object(generate_assets, "gTTS", side_effect=FakeGTTS) as gtts,
+                patch.object(generate_assets, "_audio_duration_seconds", return_value=3.0),
+            ):
+                words, duration = asyncio.run(
+                    generate_assets.synthesize_voice_and_timings(
+                        "**Clear process** [pause] turns 🚀 noise into signal.",
+                        "en-US-AndrewMultilingualNeural",
+                        output_path,
+                    )
+                )
+                self.assertTrue(os.path.isfile(output_path))
+
+        self.assertEqual(
+            [call.args[1] for call in communicate.call_args_list],
+            [
+                "en-US-AndrewMultilingualNeural",
+                "en-US-GuyNeural",
+                "en-US-ChristopherNeural",
+                "en-GB-RyanNeural",
+            ],
+        )
+        self.assertEqual(gtts.call_args.kwargs, {
+            "text": "Clear process turns noise into signal.",
+            "lang": "en",
+        })
+        self.assertEqual(len(words), 6)
+        self.assertEqual(duration, 3.0)
+
+    def test_hindi_edge_voice_fallbacks_reach_gtts_in_hindi_mode(self):
+        class NoAudioCommunicate:
+            async def stream(self):
+                raise NoAudioReceived()
+                yield {}
+
+        class FakeGTTS:
+            def __init__(self, text, lang):
+                self.language = lang
+
+            def save(self, path):
+                with open(path, "wb") as audio_file:
+                    audio_file.write(b"mock mp3 bytes")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch.object(
+                    generate_assets.edge_tts,
+                    "Communicate",
+                    side_effect=lambda *args, **kwargs: NoAudioCommunicate(),
+                ) as communicate,
+                patch.object(generate_assets, "gTTS", side_effect=FakeGTTS) as gtts,
+                patch.object(generate_assets, "_audio_duration_seconds", return_value=2.0),
+            ):
+                words, _ = asyncio.run(
+                    generate_assets.synthesize_voice_and_timings(
+                        "Namaste duniya, aaj seekhte hain.",
+                        "hi-IN-SwaraNeural",
+                        os.path.join(temp_dir, "hindi.mp3"),
+                    )
+                )
+
+        self.assertEqual(
+            [call.args[1] for call in communicate.call_args_list],
+            ["hi-IN-SwaraNeural", "hi-IN-MadhurNeural", "en-IN-PrabhatNeural"],
+        )
+        self.assertEqual(gtts.call_args.kwargs["lang"], "hi")
+        self.assertEqual(len(words), 5)
 
     def test_video_generation_uses_pollinations_for_high_impact_scenes(self):
         response = Mock(
@@ -194,11 +387,14 @@ class GenerateAssetsTests(unittest.TestCase):
             patch.object(generate_assets.requests, "post", side_effect=[response, response]) as post,
             patch.object(generate_assets.time, "sleep") as sleep,
         ):
-            with self.assertRaisesRegex(RuntimeError, "HTTP 402.*FREE_LIMIT"):
-                generate_assets.generate_storyboard("A test prompt", "A test system prompt", 5)
+            result = generate_assets.generate_storyboard(
+                "A test prompt", "A test system prompt", 5
+            )
 
         self.assertEqual(post.call_count, 2)
         sleep.assert_called_once_with(36)
+        self.assertGreaterEqual(len(result["narration"].split()), 60)
+        self.assertEqual(len(result["scenes"]), 8)
 
     def test_short_storyboard_is_retried_with_an_explicit_minimum(self):
         scenes = [
@@ -224,7 +420,7 @@ class GenerateAssetsTests(unittest.TestCase):
             },
         )
         valid_storyboard = {
-            "narration": "A complete narration with enough words for this test case.",
+            "narration": VALID_NARRATION,
             "scenes": scenes,
         }
         valid_response = Mock(
@@ -245,7 +441,7 @@ class GenerateAssetsTests(unittest.TestCase):
 
         self.assertEqual(result, valid_storyboard)
         self.assertEqual(post.call_count, 2)
-        self.assertIn("at least 5 words", post.call_args_list[1].kwargs["json"]["messages"][1]["content"])
+        self.assertIn("at least 60 words", post.call_args_list[1].kwargs["json"]["messages"][1]["content"])
         sleep.assert_called_once_with(46)
 
     def test_gemini_is_only_used_as_an_optional_fallback(self):
@@ -262,7 +458,7 @@ class GenerateAssetsTests(unittest.TestCase):
             for index in range(5)
         ]
         storyboard = {
-            "narration": "A complete narration with enough words for this test case.",
+            "narration": VALID_NARRATION,
             "scenes": scenes,
         }
         limited = Mock(
@@ -291,8 +487,12 @@ class GenerateAssetsTests(unittest.TestCase):
             [
                 "https://text.pollinations.ai/openai",
                 "https://text.pollinations.ai/openai",
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=test-gemini-key",
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
             ],
+        )
+        self.assertEqual(
+            post.call_args_list[2].kwargs["headers"]["x-goog-api-key"],
+            "test-gemini-key",
         )
 
 
