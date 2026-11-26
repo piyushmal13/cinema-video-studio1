@@ -64,13 +64,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ github.event.client_payload.chat_id || secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors --max-time 300 \
-            -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendVideo" \
-            -F chat_id="$CHAT_ID" \
-            -F video="@out/final.mp4" \
-            -F caption="Your finished cinema film is ready." \
-            -F supports_streaming=true
+        run: python scripts/deliver_video.py --video out/final.mp4
 
       - name: Notify Telegram when generation fails
         if: failure()
