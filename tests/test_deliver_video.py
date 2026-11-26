@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from scripts.deliver_video import (
+    PUBLIC_HOST_LIMIT_BYTES,
     UPLOAD_TARGET_BYTES,
     _encode_under_limit,
     deliver_video,
@@ -123,7 +124,7 @@ class TelegramDeliveryTests(unittest.TestCase):
             )
             self.assertLessEqual(result.stat().st_size, 3 * 1024 * 1024)
 
-    def test_repeated_413_fails_explicitly_after_bounded_attempts(self):
+    def test_repeated_413_sends_temporary_public_link_after_bounded_attempts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             video = Path(temp_dir) / "final.mp4"
             video.write_bytes(b"small but rejected")
@@ -133,14 +134,27 @@ class TelegramDeliveryTests(unittest.TestCase):
                 status_code=413,
                 json=lambda: {"ok": False, "description": "Request Entity Too Large"},
             )
-            post = Mock(side_effect=[too_large(), too_large(), too_large()])
+            post = Mock(
+                side_effect=[
+                    too_large(),
+                    too_large(),
+                    too_large(),
+                    Mock(
+                        status_code=200,
+                        json=lambda: {
+                            "status": "success",
+                            "data": {"url": "https://tmpfiles.org/123/final.mp4"},
+                        },
+                    ),
+                    Mock(status_code=200, json=lambda: {"ok": True}),
+                ]
+            )
 
             with (
                 patch(
                     "scripts.deliver_video._encode_under_limit",
                     return_value=compressed,
                 ),
-                self.assertRaisesRegex(RuntimeError, "attempted 3 times"),
             ):
                 deliver_video(
                     video,
@@ -151,7 +165,66 @@ class TelegramDeliveryTests(unittest.TestCase):
                     post=post,
                 )
 
-        self.assertEqual(post.call_count, 3)
+        self.assertEqual(post.call_count, 5)
+        self.assertEqual(
+            post.call_args.args[0],
+            "https://api.telegram.org/bottest-token/sendMessage",
+        )
+        self.assertIn("within 48 hours", post.call_args.kwargs["data"]["text"])
+
+    def test_compression_failure_uploads_public_link(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "final.mp4"
+            video.write_bytes(b"x" * (UPLOAD_TARGET_BYTES + 1))
+            post = Mock(
+                side_effect=[
+                    Mock(
+                        status_code=200,
+                        json=lambda: {
+                            "status": "success",
+                            "data": {"url": "https://tmpfiles.org/123/final.mp4"},
+                        },
+                    ),
+                    Mock(status_code=200, json=lambda: {"ok": True}),
+                ]
+            )
+
+            with patch(
+                "scripts.deliver_video._encode_under_limit",
+                side_effect=RuntimeError("test compression failure"),
+            ):
+                deliver_video(
+                    video,
+                    "test-token",
+                    "123",
+                    ffmpeg="ffmpeg",
+                    ffprobe="ffprobe",
+                    post=post,
+                )
+
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(
+            post.call_args.args[0],
+            "https://api.telegram.org/bottest-token/sendMessage",
+        )
+        upload_call = post.call_args_list[0]
+        self.assertEqual(upload_call.args[0], "https://tmpfiles.org/api/v1/upload")
+        self.assertEqual(upload_call.kwargs["data"]["expire"], "172800")
+
+    def test_public_host_rejects_files_over_its_documented_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "too-large.mp4"
+            with video.open("wb") as file:
+                file.truncate(PUBLIC_HOST_LIMIT_BYTES + 1)
+
+            with self.assertRaisesRegex(RuntimeError, "100 MB file limit"):
+                deliver_video(
+                    video,
+                    "test-token",
+                    "123",
+                    ffmpeg=None,
+                    post=Mock(),
+                )
 
     def test_reports_telegram_api_rejection(self):
         with tempfile.TemporaryDirectory() as temp_dir:
