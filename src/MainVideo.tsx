@@ -205,7 +205,7 @@ export const MainVideo: React.FC = () => {
         <Audio src={staticFile(videoData.voiceoverFile)} volume={1} />
       )}
       {videoData.ambientScoreFile && (
-        <Audio src={staticFile(videoData.ambientScoreFile)} volume={0.4} />
+        <Audio src={staticFile(videoData.ambientScoreFile)} volume={0.25} />
       )}
 
       {scenes.map((scene, index) => {
@@ -227,6 +227,8 @@ export const MainVideo: React.FC = () => {
                 mediaFile={cleanMedia}
                 mediaKind={scene.mediaKind}
                 cameraMotion={scene.cameraMotion}
+                sceneType={scene.type}
+                motionDurationInFrames={durationFrames}
                 accentColor={themeColor}
               />
               <ThreeDScenes

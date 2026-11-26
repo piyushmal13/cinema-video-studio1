@@ -31,13 +31,13 @@ class GenerateAssetsTests(unittest.TestCase):
         )
 
         with (
-            patch.object(generate_assets, "GEMINI_API_KEY", ""),
-            patch.object(generate_assets, "GROQ_API_KEY", ""),
+            patch.object(generate_assets, "GEMINI_API_KEY", "test-gemini-key"),
             patch.object(generate_assets.requests, "post", return_value=response) as post,
         ):
             result = generate_assets.generate_storyboard("A test prompt", "A test system prompt", 5)
 
         self.assertEqual(result, storyboard)
+        self.assertEqual(post.call_args.args[0], "https://text.pollinations.ai/openai")
         self.assertEqual(post.call_args.kwargs["json"]["response_format"], {"type": "json_object"})
         self.assertEqual(post.call_args.kwargs["json"]["max_tokens"], 4096)
 
@@ -49,7 +49,6 @@ class GenerateAssetsTests(unittest.TestCase):
 
         with (
             patch.object(generate_assets, "GEMINI_API_KEY", ""),
-            patch.object(generate_assets, "GROQ_API_KEY", ""),
             patch.object(generate_assets.requests, "post", side_effect=[response, response]) as post,
             patch.object(generate_assets.time, "sleep") as sleep,
         ):
@@ -97,7 +96,6 @@ class GenerateAssetsTests(unittest.TestCase):
 
         with (
             patch.object(generate_assets, "GEMINI_API_KEY", ""),
-            patch.object(generate_assets, "GROQ_API_KEY", ""),
             patch.object(generate_assets.requests, "post", side_effect=[short_response, valid_response]) as post,
             patch.object(generate_assets.time, "sleep") as sleep,
         ):
@@ -107,6 +105,53 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertEqual(post.call_count, 2)
         self.assertIn("at least 5 words", post.call_args_list[1].kwargs["json"]["messages"][1]["content"])
         sleep.assert_called_once_with(46)
+
+    def test_gemini_is_only_used_as_an_optional_fallback(self):
+        scenes = [
+            {
+                "type": "cinema_hero",
+                "weight": 0.2,
+                "kicker": "OPENING",
+                "headline": f"Scene {index}",
+                "visualQuery": "cinematic ocean waves at night",
+                "cameraMotion": "zoom_in",
+                "sfxCue": "whoosh",
+            }
+            for index in range(5)
+        ]
+        storyboard = {
+            "narration": "A complete narration with enough words for this test case.",
+            "scenes": scenes,
+        }
+        limited = Mock(
+            status_code=402,
+            text='{"error":{"code":"FREE_LIMIT","message":"Retry after 35s"}}',
+        )
+        gemini = Mock(
+            status_code=200,
+            json=lambda: {
+                "candidates": [{
+                    "content": {"parts": [{"text": json.dumps(storyboard)}]}
+                }]
+            },
+        )
+
+        with (
+            patch.object(generate_assets, "GEMINI_API_KEY", "test-gemini-key"),
+            patch.object(generate_assets.requests, "post", side_effect=[limited, limited, gemini]) as post,
+            patch.object(generate_assets.time, "sleep"),
+        ):
+            result = generate_assets.generate_storyboard("A test prompt", "A test system prompt", 5)
+
+        self.assertEqual(result, storyboard)
+        self.assertEqual(
+            [call.args[0] for call in post.call_args_list],
+            [
+                "https://text.pollinations.ai/openai",
+                "https://text.pollinations.ai/openai",
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=test-gemini-key",
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -9,24 +9,42 @@ import {
   useVideoConfig,
 } from 'remotion';
 import { noise2D } from '@remotion/noise';
-import { CameraMotion } from '../types';
+import { CameraMotion, SceneType } from '../types';
+
+const sceneAccentColors: Record<SceneType, string> = {
+  cinema_hero: '#D4AF37',
+  three_d_globe: '#38BDF8',
+  three_d_bars: '#A78BFA',
+  candlestick_chart: '#34D399',
+  split_compare: '#FB7185',
+  step_list: '#22D3EE',
+  cinema_outro: '#FBBF24',
+};
 
 export const CinemaBackdrop: React.FC<{
   mediaFile?: string;
   mediaKind?: 'video' | 'image' | 'none';
   cameraMotion?: CameraMotion;
+  sceneType?: SceneType;
+  motionDurationInFrames?: number;
   accentColor: string;
   isCinemaMode?: boolean;
 }> = ({
   mediaFile,
   mediaKind = 'none',
   cameraMotion = 'zoom_in',
+  sceneType,
+  motionDurationInFrames,
   accentColor,
   isCinemaMode = false,
 }) => {
   const frame = useCurrentFrame();
   const { durationInFrames, fps } = useVideoConfig();
-  const progress = Math.min(1, frame / Math.max(1, durationInFrames));
+  const progress = Math.min(
+    1,
+    frame / Math.max(1, motionDurationInFrames ?? durationInFrames)
+  );
+  const backdropAccent = sceneType ? sceneAccentColors[sceneType] : accentColor;
 
   let scale = 1.06;
   let translateX = 0;
@@ -88,7 +106,8 @@ export const CinemaBackdrop: React.FC<{
       {(!mediaFile || mediaKind === 'none') && (
         <AbsoluteFill
           style={{
-            background: `radial-gradient(circle at 50% 35%, ${accentColor}28 0%, #090D16 55%, #04060A 100%)`,
+            background: `radial-gradient(circle at 50% 35%, ${backdropAccent}42 0%, #090D16 55%, #04060A 100%), linear-gradient(135deg, #05070B 0%, ${backdropAccent}18 50%, #05070B 100%)`,
+            transform: `scale(${scale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
           }}
         />
       )}

@@ -14,7 +14,6 @@ else:
     from prompt_intent import compose_story_prompt, parse_prompt_intent, validate_storyboard
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
 
 os.makedirs("public/media", exist_ok=True)
@@ -57,58 +56,7 @@ def clean_json_response(raw_text: str) -> dict:
 
 
 def generate_storyboard(prompt: str, sys_prompt: str, min_narration_words: int) -> dict:
-    # 1. Primary: Google AI Studio Free Tier (current 2026 models from API error notice)
-    if GEMINI_API_KEY:
-        for model_id in ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={GEMINI_API_KEY}"
-                resp = requests.post(
-                    url,
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "contents": [{"parts": [{"text": f"{sys_prompt}\n\nUser request: {prompt}"}]}],
-                        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.5},
-                    },
-                    timeout=60,
-                )
-                if resp.status_code == 200:
-                    raw_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    print(f"Directed with Gemini ({model_id})")
-                    return validate_storyboard(
-                        clean_json_response(raw_text), min_narration_words
-                    )
-                else:
-                    print(f"Gemini {model_id} status {resp.status_code}: {resp.text[:200]}")
-            except Exception as e:
-                print(f"Gemini {model_id} error: {e}")
-
-    # 2. Optional: Groq Free Tier (if added later)
-    if GROQ_API_KEY:
-        try:
-            resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [
-                        {"role": "system", "content": sys_prompt},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.5,
-                    "response_format": {"type": "json_object"},
-                },
-                timeout=60,
-            )
-            if resp.status_code == 200:
-                print("Directed with Groq Llama 3.3 70B")
-                return validate_storyboard(
-                    clean_json_response(resp.json()["choices"][0]["message"]["content"]),
-                    min_narration_words,
-                )
-        except Exception as e:
-            print(f"Groq error: {e}")
-
-    # 3. Keyless fallback: Pollinations OpenAI-compatible endpoint.
+    # Primary: keyless Pollinations. Its public free tier can impose cooldowns.
     pollinations_error = None
     free_model = "openai"
     retry_prompt = f"{prompt}\n\nRespond with valid JSON only."
@@ -170,11 +118,36 @@ def generate_storyboard(prompt: str, sys_prompt: str, min_narration_words: int) 
                 )
                 time.sleep(46)
 
+    if GEMINI_API_KEY:
+        for model_id in ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={GEMINI_API_KEY}"
+                resp = requests.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "contents": [{"parts": [{"text": f"{sys_prompt}\n\nUser request: {prompt}"}]}],
+                        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.5},
+                    },
+                    timeout=60,
+                )
+                if resp.status_code == 200:
+                    raw_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    print(f"Directed with Gemini fallback ({model_id})")
+                    return validate_storyboard(
+                        clean_json_response(raw_text), min_narration_words
+                    )
+                print(f"Gemini {model_id} status {resp.status_code}: {resp.text[:200]}")
+            except Exception as e:
+                print(f"Gemini {model_id} error: {e}")
+
     detail = f" Pollinations error: {pollinations_error}" if pollinations_error else ""
+    if not GEMINI_API_KEY:
+        raise RuntimeError(f"No valid storyboard was returned by the free provider.{detail}")
     raise RuntimeError(f"All AI providers failed to return valid JSON.{detail}")
 
 def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
-    # Unlimited $0 Keyless AI Cinema Still via Pollinations Flux
+    # Keyless Pollinations Flux image generation; the backdrop has a procedural fallback.
     try:
         w, h = (1280, 720) if orientation == "landscape" else (768, 1344)
         styled_prompt = urllib.parse.quote(
@@ -187,6 +160,10 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
             with open(out_path, "wb") as f:
                 f.write(r.content)
             return f"media/scene_{idx}.jpg", "image"
+        print(
+            f"Visual provider returned HTTP {r.status_code} or an undersized image "
+            f"for scene {idx}; using the procedural backdrop."
+        )
     except Exception as e:
         print(f"Visual fallback on scene {idx}: {e}")
 

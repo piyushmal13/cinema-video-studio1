@@ -39,7 +39,6 @@ jobs:
       - name: Direct Film, Fetch AI Cinema Visuals, Synthesize Voice & Score
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           FORMAT: ${{ github.event.inputs.format || github.event.client_payload.format || 'vertical' }}
           PROMPT: ${{ github.event.inputs.prompt || github.event.client_payload.text }}
           PROMPT_CONTEXT: ${{ github.event.client_payload.prompt_context }}
