@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { ThreeCanvas } from '@remotion/three';
 import { spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import * as THREE from 'three';
+import type { SceneType } from '../types';
 
 const CinemaCore: React.FC<{ color: string }> = ({ color }) => {
   const frame = useCurrentFrame();
@@ -21,6 +22,10 @@ const CinemaCore: React.FC<{ color: string }> = ({ color }) => {
   }, []);
 
   const ringGeo = useMemo(() => new THREE.BufferGeometry().setFromPoints(ringPoints), [ringPoints]);
+  const ringLine = useMemo(
+    () => new THREE.Line(ringGeo, new THREE.LineBasicMaterial({ color: '#38BDF8' })),
+    [ringGeo]
+  );
 
   return (
     <group scale={scale} rotation={[rotX, rotY, 0.14]}>
@@ -42,9 +47,7 @@ const CinemaCore: React.FC<{ color: string }> = ({ color }) => {
         <torusGeometry args={[2.1, 0.025, 16, 100]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.6} />
       </mesh>
-      <line geometry={ringGeo}>
-        <lineBasicMaterial color="#38BDF8" />
-      </line>
+      <primitive object={ringLine} />
     </group>
   );
 };
@@ -131,4 +134,20 @@ export const ThreeDBarChartScene: React.FC<{
       </div>
     </div>
   );
+};
+
+export const ThreeDScenes: React.FC<{
+  sceneType: SceneType;
+  themeColor: string;
+  barValues?: { label: string; value: number }[];
+}> = ({ sceneType, themeColor, barValues }) => {
+  if (sceneType === 'three_d_globe') {
+    return <ThreeDOrbitalScene color={themeColor} />;
+  }
+
+  if (sceneType === 'three_d_bars' || sceneType === 'candlestick_chart') {
+    return <ThreeDBarChartScene bars={barValues} color={themeColor} />;
+  }
+
+  return null;
 };

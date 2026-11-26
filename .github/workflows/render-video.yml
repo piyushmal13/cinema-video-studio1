@@ -30,24 +30,24 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Remotion Engine, Official Agent Skills & Python Audio Tools
+      - name: Install Remotion Engine and Python Audio Tools
         run: |
-          npm install --legacy-peer-deps
-          npx skills add remotion-dev/skills -y || true
-          pip install --upgrade edge-tts requests
+          npm ci
+          pip install -r requirements.txt
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
 
       - name: Direct Film, Fetch AI Cinema Visuals, Synthesize Voice & Score
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           FORMAT: ${{ github.event.inputs.format || github.event.client_payload.format || 'vertical' }}
           PROMPT: ${{ github.event.inputs.prompt || github.event.client_payload.text }}
+          PROMPT_CONTEXT: ${{ github.event.client_payload.prompt_context }}
         run: python scripts/generate_assets.py
 
       - name: Render Cinema Master MP4
-        env:
-          FORMAT: ${{ github.event.inputs.format || github.event.client_payload.format || 'vertical' }}
         run: |
+          FORMAT=$(python -c 'import json; print(json.load(open("public/video_data.json", encoding="utf-8"))["format"])')
           if [ "$FORMAT" = "landscape" ]; then
             npm run build:landscape
             mv out/final_16x9.mp4 out/final.mp4
@@ -59,10 +59,27 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ github.event.client_payload.chat_id || secrets.TELEGRAM_CHAT_ID }}
-          PROMPT_TEXT: ${{ github.event.inputs.prompt || github.event.client_payload.text }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendVideo" \
+          curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors --max-time 300 \
+            -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendVideo" \
             -F chat_id="$CHAT_ID" \
             -F video="@out/final.mp4" \
-            -F caption="🎬 Mastered Film: $PROMPT_TEXT" \
+            -F caption="Your finished cinema film is ready." \
             -F supports_streaming=true
+
+      - name: Notify Telegram when generation fails
+        if: failure()
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ github.event.client_payload.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "Telegram failure notification skipped: bot token or chat ID is not configured."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --retry 2 \
+            -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$CHAT_ID" \
+            --data-urlencode "text=Your video could not be completed. Check the GitHub Actions run for the error: $RUN_URL"

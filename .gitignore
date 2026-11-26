@@ -1,0 +1,8 @@
+node_modules/
+__pycache__/
+*.py[cod]
+out/*.mp4
+out/*.mp3
+public/media/
+public/voiceover.mp3
+public/ambient_score.mp3

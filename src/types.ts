@@ -40,7 +40,10 @@ export interface VideoProps {
   brandTag: string;
   themeColor: string;
   mode: 'cinema' | 'shorts';
+  format?: 'vertical' | 'landscape';
   totalDurationSec: number;
   scenes: SceneItem[];
   words: WordTiming[];
+  voiceoverFile?: string;
+  ambientScoreFile?: string;
 }

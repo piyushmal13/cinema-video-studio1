@@ -5,6 +5,8 @@
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "skills:install": "npx skills add remotion-dev/skills -y || npx remotion skills add",
+    "test": "node --test cloudflare-worker/worker.test.js",
+    "test:python": "python -m unittest discover -s tests",
     "build": "remotion render src/index.ts MainComp out/final.mp4 --gl=swangle --crf=18",
     "build:landscape": "remotion render src/index.ts LandscapeComp out/final_16x9.mp4 --gl=swangle --crf=18"
   },

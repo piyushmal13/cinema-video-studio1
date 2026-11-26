@@ -10,12 +10,12 @@ import {
 import rawVideoData from '../public/video_data.json';
 import { CinemaBackdrop } from './components/CinemaBackdrop';
 import { ThreeDScenes } from './components/ThreeDScenes';
-import { VideoData, SceneItem } from './types';
+import { VideoProps, SceneItem } from './types';
 
-const videoData = rawVideoData as VideoData;
+const videoData = rawVideoData as VideoProps;
 
 const SubtitleOverlay: React.FC<{
-  words: VideoData['words'];
+  words: VideoProps['words'];
   themeColor: string;
 }> = ({ words, themeColor }) => {
   const frame = useCurrentFrame();
@@ -201,8 +201,12 @@ export const MainVideo: React.FC = () => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#05080F' }}>
-      <Audio src={staticFile('voiceover.mp3')} volume={1} />
-      <Audio src={staticFile('ambient_score.mp3')} volume={0.28} />
+      {videoData.voiceoverFile && (
+        <Audio src={staticFile(videoData.voiceoverFile)} volume={1} />
+      )}
+      {videoData.ambientScoreFile && (
+        <Audio src={staticFile(videoData.ambientScoreFile)} volume={0.4} />
+      )}
 
       {scenes.map((scene, index) => {
         const fromFrame = Math.max(0, Math.round(scene.startSec * fps));
@@ -223,7 +227,7 @@ export const MainVideo: React.FC = () => {
                 mediaFile={cleanMedia}
                 mediaKind={scene.mediaKind}
                 cameraMotion={scene.cameraMotion}
-                themeColor={themeColor}
+                accentColor={themeColor}
               />
               <ThreeDScenes
                 sceneType={scene.type}
