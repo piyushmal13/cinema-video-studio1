@@ -27,6 +27,7 @@ export const CinemaBackdrop: React.FC<{
   cameraMotion?: CameraMotion;
   sceneType?: SceneType;
   motionDurationInFrames?: number;
+  beatSync?: boolean;
   accentColor: string;
   isCinemaMode?: boolean;
 }> = ({
@@ -35,6 +36,7 @@ export const CinemaBackdrop: React.FC<{
   cameraMotion = 'zoom_in',
   sceneType,
   motionDurationInFrames,
+  beatSync = false,
   accentColor,
   isCinemaMode = false,
 }) => {
@@ -73,13 +75,17 @@ export const CinemaBackdrop: React.FC<{
 
   const shakeX = noise2D('camX', frame / (fps * 2.5), 0) * 6;
   const shakeY = noise2D('camY', 0, frame / (fps * 2.5)) * 6;
+  const beatPulse = beatSync
+    ? Math.max(0, Math.sin((frame / fps) * Math.PI * 4)) * 0.012
+    : 0;
+  const animatedScale = scale * (1 + beatPulse);
 
   return (
     <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#05070B' }}>
       {mediaFile && mediaKind === 'video' && (
         <AbsoluteFill
           style={{
-            transform: `scale(${scale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
+            transform: `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
           }}
         >
           <OffthreadVideo
@@ -93,7 +99,7 @@ export const CinemaBackdrop: React.FC<{
       {mediaFile && mediaKind === 'image' && (
         <AbsoluteFill
           style={{
-            transform: `scale(${scale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
+            transform: `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
           }}
         >
           <Img
@@ -107,10 +113,22 @@ export const CinemaBackdrop: React.FC<{
         <AbsoluteFill
           style={{
             background: `radial-gradient(circle at 50% 35%, ${backdropAccent}42 0%, #090D16 55%, #04060A 100%), linear-gradient(135deg, #05070B 0%, ${backdropAccent}18 50%, #05070B 100%)`,
-            transform: `scale(${scale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
+            transform: `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
           }}
         />
       )}
+
+      <AbsoluteFill
+        style={{
+          zIndex: 5,
+          pointerEvents: 'none',
+          opacity: 0.22,
+          mixBlendMode: 'soft-light',
+          backgroundImage:
+            'repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0px, transparent 1px, transparent 4px)',
+          backgroundPositionY: `${frame % 4}px`,
+        }}
+      />
 
       <AbsoluteFill
         style={{

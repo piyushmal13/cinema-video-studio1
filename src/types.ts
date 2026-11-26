@@ -41,9 +41,13 @@ export interface VideoProps {
   themeColor: string;
   mode: 'cinema' | 'shorts';
   format?: 'vertical' | 'landscape';
+  viralMode?: 'phonk' | 'meme' | 'cinema';
+  beatSync?: boolean;
   totalDurationSec: number;
   scenes: SceneItem[];
   words: WordTiming[];
   voiceoverFile?: string;
   ambientScoreFile?: string;
+  sfxBoomFile?: string;
+  sfxWhooshFile?: string;
 }

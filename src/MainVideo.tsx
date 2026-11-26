@@ -2,6 +2,7 @@ import React from 'react';
 import {
   AbsoluteFill,
   Audio,
+  interpolate,
   Sequence,
   staticFile,
   useCurrentFrame,
@@ -19,7 +20,7 @@ const SubtitleOverlay: React.FC<{
   themeColor: string;
 }> = ({ words, themeColor }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, height } = useVideoConfig();
   const currentSec = frame / fps;
 
   if (!words || words.length === 0) return null;
@@ -30,21 +31,22 @@ const SubtitleOverlay: React.FC<{
 
   if (activeIndex === -1) return null;
 
-  const windowStart = Math.max(0, activeIndex - 2);
+  const windowStart = Math.max(0, activeIndex - 1);
   const windowEnd = Math.min(words.length, activeIndex + 3);
   const visibleWords = words.slice(windowStart, windowEnd);
+  const fontSize = Math.max(22, Math.min(44, height * 0.024));
 
   return (
     <div
       style={{
         position: 'absolute',
-        bottom: '11%',
+        bottom: '13%',
         left: '6%',
         right: '6%',
         display: 'flex',
         flexWrap: 'wrap',
         justifyContent: 'center',
-        gap: '10px',
+        gap: '8px',
         zIndex: 30,
         pointerEvents: 'none',
       }}
@@ -56,13 +58,13 @@ const SubtitleOverlay: React.FC<{
             key={`${item.word}-${windowStart + idx}`}
             style={{
               fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-              fontSize: isCurrent ? 44 : 38,
+              fontSize: isCurrent ? fontSize : fontSize * 0.86,
               fontWeight: 900,
               letterSpacing: '0.02em',
               textTransform: 'uppercase',
               color: isCurrent ? themeColor : '#F8FAFC',
               backgroundColor: 'rgba(5, 8, 15, 0.78)',
-              padding: '6px 14px',
+              padding: '5px 12px',
               borderRadius: '10px',
               border: isCurrent ? `1px solid ${themeColor}` : '1px solid rgba(255,255,255,0.12)',
               boxShadow: isCurrent ? `0 0 24px ${themeColor}55` : '0 4px 16px rgba(0,0,0,0.6)',
@@ -82,27 +84,49 @@ const SceneCardOverlay: React.FC<{
   themeColor: string;
 }> = ({ scene, themeColor }) => {
   const frame = useCurrentFrame();
+  const { height } = useVideoConfig();
   const opacity = Math.min(1, frame / 12);
   const translateY = Math.max(0, 18 - frame * 1.5);
+  const headlineSize = Math.max(44, Math.min(68, height * 0.035));
+  const shortLabel = (label: string) => label.toUpperCase();
 
   return (
     <AbsoluteFill
       style={{
-        justifyContent: 'space-between',
-        padding: '64px 48px',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        boxSizing: 'border-box',
+        padding: '18% 7% 22%',
         opacity,
         transform: `translateY(${translateY}px)`,
         zIndex: 20,
         pointerEvents: 'none',
       }}
     >
-      <div>
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 960,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          textAlign: 'center',
+          gap: 18,
+          padding: '30px 28px',
+          borderRadius: 28,
+          border: '1px solid rgba(255,255,255,0.2)',
+          background: 'linear-gradient(145deg, rgba(5,8,15,0.72), rgba(8,13,24,0.50))',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(10px)',
+        }}
+      >
         {scene.kicker && (
           <div
             style={{
               display: 'inline-block',
-              fontFamily: 'monospace',
-              fontSize: 20,
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: Math.max(16, Math.min(21, height * 0.011)),
               fontWeight: 700,
               letterSpacing: '0.18em',
               color: themeColor,
@@ -110,35 +134,36 @@ const SceneCardOverlay: React.FC<{
               border: `1px solid ${themeColor}66`,
               padding: '8px 16px',
               borderRadius: '999px',
-              marginBottom: '18px',
             }}
           >
-            {scene.kicker}
+            {shortLabel(scene.kicker)}
           </div>
         )}
 
         <h1
           style={{
-            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-            fontSize: 54,
+            fontFamily: '"Inter", "Arial Black", system-ui, sans-serif',
+            fontSize: headlineSize,
             fontWeight: 900,
-            lineHeight: 1.12,
+            lineHeight: 1.02,
             color: '#FFFFFF',
             margin: 0,
-            textShadow: '0 6px 28px rgba(0, 0, 0, 0.85)',
+            textTransform: 'uppercase',
+            textWrap: 'balance',
+            textShadow: `0 0 34px ${themeColor}44, 0 6px 28px rgba(0,0,0,0.85)`,
           }}
         >
-          {scene.headline}
+          {shortLabel(scene.headline)}
         </h1>
 
         {scene.subline && (
           <p
             style={{
-              fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-              fontSize: 28,
+              fontFamily: '"Inter", system-ui, sans-serif',
+              fontSize: Math.max(22, Math.min(30, height * 0.016)),
               fontWeight: 500,
               color: '#CBD5E1',
-              marginTop: '14px',
+              margin: 0,
               textShadow: '0 4px 18px rgba(0, 0, 0, 0.85)',
             }}
           >
@@ -146,51 +171,137 @@ const SceneCardOverlay: React.FC<{
           </p>
         )}
 
+        {scene.statValue && (
+          <div
+            style={{
+              padding: '12px 30px',
+              borderRadius: 18,
+              border: `1px solid ${themeColor}99`,
+              background: `${themeColor}20`,
+              color: '#FFFFFF',
+              fontFamily: '"Arial Black", "Inter", system-ui, sans-serif',
+              fontSize: Math.max(38, Math.min(64, height * 0.034)),
+              fontWeight: 900,
+              textShadow: `0 0 28px ${themeColor}88`,
+            }}
+          >
+            {scene.statValue}
+          </div>
+        )}
+
+        {scene.type === 'candlestick_chart' && <IllustrativeCandlestickChart themeColor={themeColor} />}
+
         {scene.type === 'split_compare' && (
           <div
             style={{
               display: 'flex',
-              gap: '20px',
-              marginTop: '36px',
+              width: '100%',
+              gap: 14,
             }}
           >
             <div
               style={{
                 flex: 1,
-                backgroundColor: 'rgba(15, 23, 42, 0.86)',
-                border: '1px solid rgba(248, 113, 113, 0.45)',
-                borderRadius: '16px',
-                padding: '24px',
+                background: 'linear-gradient(140deg, rgba(127,29,29,0.68), rgba(15,23,42,0.82))',
+                border: '1px solid rgba(248,113,113,0.62)',
+                borderRadius: 18,
+                padding: 18,
               }}
             >
-              <div style={{ color: '#F87171', fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
-                LEGACY
+              <div style={{ color: '#F87171', fontSize: 18, fontWeight: 800, marginBottom: 8, fontFamily: '"JetBrains Mono", monospace' }}>
+                {shortLabel(scene.leftLabel || 'RETAIL TRAP')}
               </div>
-              <div style={{ color: '#F1F5F9', fontSize: 26, fontWeight: 700 }}>
-                {scene.leftLabel || 'Manual Execution'}
+              <div style={{ color: '#F1F5F9', fontSize: Math.max(20, Math.min(30, height * 0.016)), fontWeight: 800 }}>
+                {scene.subline || 'Reactive decisions'}
               </div>
             </div>
 
             <div
               style={{
                 flex: 1,
-                backgroundColor: 'rgba(15, 23, 42, 0.86)',
+                background: `linear-gradient(140deg, ${themeColor}33, rgba(15,23,42,0.86))`,
                 border: `1px solid ${themeColor}`,
-                borderRadius: '16px',
-                padding: '24px',
+                borderRadius: 18,
+                padding: 18,
               }}
             >
-              <div style={{ color: themeColor, fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
-                NEXT-GEN
+              <div style={{ color: themeColor, fontSize: 18, fontWeight: 800, marginBottom: 8, fontFamily: '"JetBrains Mono", monospace' }}>
+                {shortLabel(scene.rightLabel || 'INSTITUTIONAL EDGE')}
               </div>
-              <div style={{ color: '#FFFFFF', fontSize: 26, fontWeight: 700 }}>
-                {scene.rightLabel || 'Autonomous AI'}
+              <div style={{ color: '#FFFFFF', fontSize: Math.max(20, Math.min(30, height * 0.016)), fontWeight: 800 }}>
+                {scene.kicker || 'Disciplined execution'}
               </div>
             </div>
           </div>
         )}
       </div>
     </AbsoluteFill>
+  );
+};
+
+const IllustrativeCandlestickChart: React.FC<{ themeColor: string }> = ({ themeColor }) => {
+  const frame = useCurrentFrame();
+  const candleCount = 18;
+  const candles = Array.from({ length: candleCount }, (_, index) => {
+    const trend = Math.sin(index * 0.61 + frame / 36) * 24;
+    const wave = Math.sin(index * 1.7 + 0.4) * 22;
+    const center = 134 - trend - wave;
+    const body = 12 + Math.abs(Math.sin(index * 2.3)) * 18;
+    return {
+      x: 34 + index * 40,
+      top: Math.max(42, center - body / 2),
+      bottom: Math.min(210, center + body / 2),
+      wickTop: Math.max(22, center - body),
+      wickBottom: Math.min(230, center + body),
+      up: Math.sin(index * 1.37 + frame / 60) > 0,
+    };
+  });
+
+  return (
+    <div style={{ width: '100%', maxWidth: 820, padding: '12px 14px 6px', borderRadius: 18, background: 'rgba(2,6,12,0.76)', border: '1px solid rgba(148,163,184,0.24)' }}>
+      <div style={{ textAlign: 'left', color: '#CBD5E1', font: '700 14px "JetBrains Mono", monospace', letterSpacing: '0.08em' }}>
+        XAUUSD · ILLUSTRATIVE PRICE ACTION
+      </div>
+      <svg viewBox="0 0 780 250" style={{ width: '100%', display: 'block' }} aria-label="Illustrative animated candlestick chart">
+        <rect x="480" y="24" width="270" height="38" fill={`${themeColor}22`} stroke={`${themeColor}88`} strokeDasharray="5 6" />
+        <text x="488" y="18" fill={themeColor} fontSize="11" fontFamily="monospace">LIQUIDITY SWEEP ZONE · ILLUSTRATIVE</text>
+        {[80, 130, 180, 230].map((y) => <line key={y} x1="20" x2="760" y1={y} y2={y} stroke="rgba(148,163,184,0.18)" />)}
+        {candles.map((candle, index) => {
+          const color = candle.up ? '#34D399' : '#FB7185';
+          return (
+            <g key={index} opacity={0.78 + (index % 3) * 0.08}>
+              <line x1={candle.x + 8} x2={candle.x + 8} y1={candle.wickTop} y2={candle.wickBottom} stroke={color} strokeWidth="2" />
+              <rect x={candle.x} y={candle.top} width="16" height={Math.max(5, candle.bottom - candle.top)} fill={color} rx="2" />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
+
+const TransitionFlash: React.FC = () => {
+  const frame = useCurrentFrame();
+  const opacity = interpolate(frame, [0, 1, 4], [0, 0.2, 0], {
+    extrapolateRight: 'clamp',
+    extrapolateLeft: 'clamp',
+  });
+  const scale = interpolate(frame, [0, 4], [1.035, 1], {
+    extrapolateRight: 'clamp',
+    extrapolateLeft: 'clamp',
+  });
+  if (frame >= 4) return null;
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: '#FFFFFF',
+        opacity,
+        transform: `scale(${scale})`,
+        mixBlendMode: 'screen',
+        pointerEvents: 'none',
+        zIndex: 35,
+      }}
+    />
   );
 };
 
@@ -205,7 +316,7 @@ export const MainVideo: React.FC = () => {
         <Audio src={staticFile(videoData.voiceoverFile)} volume={1} />
       )}
       {videoData.ambientScoreFile && (
-        <Audio src={staticFile(videoData.ambientScoreFile)} volume={0.25} />
+        <Audio src={staticFile(videoData.ambientScoreFile)} volume={0.22} />
       )}
 
       {scenes.map((scene, index) => {
@@ -229,6 +340,7 @@ export const MainVideo: React.FC = () => {
                 cameraMotion={scene.cameraMotion}
                 sceneType={scene.type}
                 motionDurationInFrames={durationFrames}
+                beatSync={videoData.beatSync}
                 accentColor={themeColor}
               />
               <ThreeDScenes
@@ -237,6 +349,20 @@ export const MainVideo: React.FC = () => {
                 barValues={scene.barValues}
               />
               <SceneCardOverlay scene={scene} themeColor={themeColor} />
+              {index > 0 && (
+                <Sequence
+                  from={0}
+                  durationInFrames={Math.min(durationFrames, Math.ceil(fps * 1.6))}
+                  layout="none"
+                >
+                  {scene.sfxCue === 'boom' && videoData.sfxBoomFile ? (
+                    <Audio src={staticFile(videoData.sfxBoomFile)} volume={0.52} />
+                  ) : videoData.sfxWhooshFile ? (
+                    <Audio src={staticFile(videoData.sfxWhooshFile)} volume={0.42} />
+                  ) : null}
+                </Sequence>
+              )}
+              <TransitionFlash />
             </AbsoluteFill>
           </Sequence>
         );

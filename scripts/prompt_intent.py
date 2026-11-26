@@ -108,7 +108,7 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
 
     cleaned = re.sub(r"^/(?:video|movie|cinema|reel)(?:@\w+)?\s*", "", original, flags=re.IGNORECASE)
     cleaned = re.sub(
-        r"--(?:movie|cinema|landscape|portrait|vertical|reel|hindi|hinglish|female)\b",
+        r"--(?:movie|cinema|landscape|portrait|vertical|reel|hindi|hinglish|female|phonk|viral|meme|trending)\b",
         "",
         cleaned,
         flags=re.IGNORECASE,
@@ -154,7 +154,11 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
     )
 
 
-def validate_storyboard(storyboard: dict, min_narration_words: int) -> dict:
+def validate_storyboard(
+    storyboard: dict,
+    min_narration_words: int,
+    scene_count_range: tuple[int, int] = (5, 7),
+) -> dict:
     if not isinstance(storyboard, dict):
         raise ValueError("The AI response must be a JSON object.")
 
@@ -168,8 +172,13 @@ def validate_storyboard(storyboard: dict, min_narration_words: int) -> dict:
             f"Narration is too short: {word_count} words; "
             f"at least {min_narration_words} are required."
         )
-    if not isinstance(scenes, list) or not 5 <= len(scenes) <= 7:
-        raise ValueError("The AI response must contain 5 to 7 scenes.")
+    min_scenes, max_scenes = scene_count_range
+    if not isinstance(scenes, list) or not min_scenes <= len(scenes) <= max_scenes:
+        if min_scenes == max_scenes:
+            requirement = f"exactly {min_scenes}"
+        else:
+            requirement = f"{min_scenes} to {max_scenes}"
+        raise ValueError(f"The AI response must contain {requirement} scenes.")
 
     valid_types = {
         "cinema_hero",
