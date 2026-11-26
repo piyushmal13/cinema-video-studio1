@@ -7,8 +7,8 @@ import urllib.parse
 import requests
 import edge_tts
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GROQ_API_KEY = os.environ.get("Xai-KjnuGkscQJTeprca6XsfZy8O8Y63wfXJWSmfLqFkxSpZNOAX1faoPkh2qByExzVXinz6iQIWu8f1ohTn", "").strip()
+GEMINI_API_KEY = os.environ.get("AIzaSyDQVRGG_ATwYczghifLQtdeisc_5JlWlJM", "").strip()
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "").strip()
 PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY", "").strip()
 POLLINATIONS_API_KEY = os.environ.get("POLLINATIONS_API_KEY", "").strip()
