@@ -7,11 +7,9 @@ import urllib.parse
 import requests
 import edge_tts
 
-GROQ_API_KEY = os.environ.get("Xai-KjnuGkscQJTeprca6XsfZy8O8Y63wfXJWSmfLqFkxSpZNOAX1faoPkh2qByExzVXinz6iQIWu8f1ohTn", "").strip()
-GEMINI_API_KEY = os.environ.get("AIzaSyDQVRGG_ATwYczghifLQtdeisc_5JlWlJM", "").strip()
-PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "").strip()
-PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY", "").strip()
-POLLINATIONS_API_KEY = os.environ.get("POLLINATIONS_API_KEY", "").strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+XAI_API_KEY = os.environ.get("XAI_API_KEY", "").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
 
 os.makedirs("public/media", exist_ok=True)
@@ -131,22 +129,69 @@ Return ONLY valid JSON matching this exact schema:
   ]
 }}
 
-Available scene types:
-- "cinema_hero" (full-bleed cinematic opening title over B-roll footage; supports subline & optional statValue)
-- "three_d_globe" (3D WebGL rotating geodesic core over cinematic backdrop)
-- "three_d_bars" (3D WebGL animated bar chart over cinematic backdrop; requires barValues array)
-- "candlestick_chart" (animated trading candles over cinematic backdrop)
-- "split_compare" (side-by-side comparison; requires leftLabel and rightLabel)
-- "step_list" (3-point animated checklist; requires bullets array of 3 strings)
-- "cinema_outro" (dramatic closing title card over B-roll footage; supports subline)
-
+Available scene types: "cinema_hero", "three_d_globe", "three_d_bars", "candlestick_chart", "split_compare", "step_list", "cinema_outro".
 Rules:
-1. Every scene MUST include a vivid, concrete 4-to-7 word English "visualQuery" suitable for stock video search or AI image generation.
+1. Every scene MUST include a vivid 4-to-7 word English "visualQuery".
 2. Choose "cameraMotion" from: "zoom_in", "zoom_out", "pan_left", "pan_right", "dolly_push".
 3. Choose "sfxCue" from: "boom", "whoosh", "pulse".
 4. Weights must sum to 1.0."""
 
+def clean_json_response(raw_text: str) -> dict:
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text.strip(), flags=re.MULTILINE)
+    return json.loads(cleaned)
+
 def generate_storyboard(prompt: str, sys_prompt: str) -> dict:
+    # 1. Primary: Google AI Studio (Gemini)
+    if GEMINI_API_KEY:
+        for model_id in ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={GEMINI_API_KEY}"
+                resp = requests.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "contents": [{"parts": [{"text": f"{sys_prompt}\n\nUser request: {prompt}"}]}],
+                        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.5},
+                    },
+                    timeout=60,
+                )
+                if resp.status_code == 200:
+                    raw_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    print(f"Directed with Gemini ({model_id})")
+                    return clean_json_response(raw_text)
+                else:
+                    print(f"Gemini {model_id} status {resp.status_code}: {resp.text[:200]}")
+            except Exception as e:
+                print(f"Gemini {model_id} error: {e}")
+
+    # 2. Secondary: xAI Grok API
+    if XAI_API_KEY:
+        xai_key = XAI_API_KEY[0].lower() + XAI_API_KEY[1:] if XAI_API_KEY.startswith("Xai-") else XAI_API_KEY
+        for grok_model in ["grok-3-mini", "grok-3", "grok-2-latest"]:
+            try:
+                resp = requests.post(
+                    "https://api.x.ai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": grok_model,
+                        "messages": [
+                            {"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "temperature": 0.5,
+                        "response_format": {"type": "json_object"},
+                    },
+                    timeout=60,
+                )
+                if resp.status_code == 200:
+                    print(f"Directed with xAI ({grok_model})")
+                    return clean_json_response(resp.json()["choices"][0]["message"]["content"])
+                else:
+                    print(f"xAI {grok_model} status {resp.status_code}: {resp.text[:200]}")
+            except Exception as e:
+                print(f"xAI {grok_model} error: {e}")
+
+    # 3. Optional: Groq Cloud
     if GROQ_API_KEY:
         resp = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -163,76 +208,17 @@ def generate_storyboard(prompt: str, sys_prompt: str) -> dict:
             timeout=60,
         )
         resp.raise_for_status()
-        return json.loads(resp.json()["choices"][0]["message"]["content"])
+        return clean_json_response(resp.json()["choices"][0]["message"]["content"])
 
-    if GEMINI_API_KEY:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-        resp = requests.post(
-            url,
-            headers={"Content-Type": "application/json"},
-            json={
-                "contents": [{"parts": [{"text": f"{sys_prompt}\n\nUser request: {prompt}"}]}],
-                "generationConfig": {"responseMimeType": "application/json", "temperature": 0.5},
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        raw_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(raw_text)
-
-    raise RuntimeError("Missing GROQ_API_KEY or GEMINI_API_KEY in GitHub Secrets.")
+    raise RuntimeError("Missing GEMINI_API_KEY or XAI_API_KEY in GitHub Repository Secrets.")
 
 def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
-    if PEXELS_API_KEY:
-        try:
-            r = requests.get(
-                "https://api.pexels.com/videos/search",
-                headers={"Authorization": PEXELS_API_KEY},
-                params={"query": query, "orientation": orientation, "per_page": 3, "size": "medium"},
-                timeout=20,
-            )
-            if r.status_code == 200:
-                videos = r.json().get("videos", [])
-                if videos:
-                    vfiles = videos[0].get("video_files", [])
-                    mp4s = [f for f in vfiles if f.get("file_type") == "video/mp4" and f.get("width", 0) >= 720]
-                    chosen = sorted(mp4s, key=lambda x: x.get("width", 0))[0] if mp4s else (vfiles[0] if vfiles else None)
-                    if chosen and chosen.get("link"):
-                        out_path = f"public/media/scene_{idx}.mp4"
-                        vid_data = requests.get(chosen["link"], timeout=45).content
-                        with open(out_path, "wb") as f:
-                            f.write(vid_data)
-                        return f"media/scene_{idx}.mp4", "video"
-        except Exception as e:
-            print(f"Pexels fallback on scene {idx}: {e}")
-
-    if PIXABAY_API_KEY:
-        try:
-            r = requests.get(
-                "https://pixabay.com/api/videos/",
-                params={"key": PIXABAY_API_KEY, "q": query, "per_page": 3},
-                timeout=20,
-            )
-            if r.status_code == 200:
-                hits = r.json().get("hits", [])
-                if hits:
-                    vid_url = hits[0].get("videos", {}).get("medium", {}).get("url")
-                    if vid_url:
-                        out_path = f"public/media/scene_{idx}.mp4"
-                        vid_data = requests.get(vid_url, timeout=45).content
-                        with open(out_path, "wb") as f:
-                            f.write(vid_data)
-                        return f"media/scene_{idx}.mp4", "video"
-        except Exception as e:
-            print(f"Pixabay fallback on scene {idx}: {e}")
-
     try:
         w, h = (1280, 720) if orientation == "landscape" else (768, 1344)
-        styled_prompt = urllib.parse.quote(f"{query}, dark moody cinematic film still, anamorphic lens, 8k photorealistic, obsidian and gold lighting")
-        if POLLINATIONS_API_KEY:
-            img_url = f"https://gen.pollinations.ai/image/{styled_prompt}?width={w}&height={h}&model=flux&nologo=true&key={POLLINATIONS_API_KEY}"
-        else:
-            img_url = f"https://image.pollinations.ai/prompt/{styled_prompt}?width={w}&height={h}&nologo=true"
+        styled_prompt = urllib.parse.quote(
+            f"{query}, dark moody cinematic film still, anamorphic lens flare, 8k photorealistic, obsidian and gold lighting"
+        )
+        img_url = f"https://image.pollinations.ai/prompt/{styled_prompt}?width={w}&height={h}&model=flux&nologo=true&seed={idx+101}"
         r = requests.get(img_url, timeout=35)
         if r.status_code == 200 and len(r.content) > 5000:
             out_path = f"public/media/scene_{idx}.jpg"
@@ -240,7 +226,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
                 f.write(r.content)
             return f"media/scene_{idx}.jpg", "image"
     except Exception as e:
-        print(f"AI image fallback on scene {idx}: {e}")
+        print(f"Visual fallback on scene {idx}: {e}")
 
     return "", "none"
 
@@ -261,7 +247,7 @@ def synthesize_ambient_cinema_score(duration_sec: float, out_mp3: str):
             stderr=subprocess.DEVNULL,
         )
     except Exception as e:
-        print(f"Ambient score generation warning: {e}")
+        print(f"Ambient score warning: {e}")
 
 async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
     communicate = edge_tts.Communicate(text, voice, rate="+4%", pitch="-2Hz")
