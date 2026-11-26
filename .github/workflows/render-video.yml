@@ -1,0 +1,69 @@
+name: Cinema AI Telegram Film Studio
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Topic, story, or full script'
+        required: true
+      format:
+        description: 'vertical (9:16) or landscape (16:9)'
+        required: false
+        default: 'vertical'
+  repository_dispatch:
+    types: [telegram_video_request]
+
+jobs:
+  produce-and-deliver:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Remotion Engine, Official Agent Skills & Python Audio Tools
+        run: |
+          npm install
+          npx skills add remotion-dev/skills -y || true
+          pip install --upgrade edge-tts requests
+
+      - name: Direct Film, Fetch AI Cinema Visuals, Synthesize Voice & Score
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          FORMAT: ${{ github.event.inputs.format || github.event.client_payload.format || 'vertical' }}
+          PROMPT: ${{ github.event.inputs.prompt || github.event.client_payload.text }}
+        run: python scripts/generate_assets.py
+
+      - name: Render Cinema Master MP4
+        env:
+          FORMAT: ${{ github.event.inputs.format || github.event.client_payload.format || 'vertical' }}
+        run: |
+          if [ "$FORMAT" = "landscape" ]; then
+            npm run build:landscape
+            mv out/final_16x9.mp4 out/final.mp4
+          else
+            npm run build
+          fi
+
+      - name: Deliver Film Directly to Telegram Phone Chat
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ github.event.client_payload.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          PROMPT_TEXT: ${{ github.event.inputs.prompt || github.event.client_payload.text }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendVideo" \
+            -F chat_id="$CHAT_ID" \
+            -F video="@out/final.mp4" \
+            -F caption="🎬 Mastered Film: $PROMPT_TEXT" \
+            -F supports_streaming=true
