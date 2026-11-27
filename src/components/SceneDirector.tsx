@@ -14,8 +14,8 @@ const Kicker: React.FC<{ children: React.ReactNode; color: string; muted?: boole
 }) => (
   <div style={{
     color: muted ? '#CBD5E1' : color,
-    font: '700 15px "JetBrains Mono", monospace',
-    letterSpacing: '0.18em',
+    font: '700 12px "JetBrains Mono", monospace',
+    letterSpacing: '0.16em',
     textTransform: 'uppercase',
     marginBottom: 16,
   }}>{children}</div>
@@ -38,7 +38,10 @@ const Headline: React.FC<{
     textAlign: align,
     textTransform: uppercase ? 'uppercase' : 'none',
     textWrap: 'balance',
-    textShadow: '0 8px 34px rgba(0,0,0,0.72)',
+    overflowWrap: 'break-word',
+    wordBreak: 'normal',
+    maxWidth: '100%',
+    textShadow: '0 5px 24px rgba(0,0,0,0.78)',
     margin: 0,
   }}>{children}</h1>
 );
@@ -123,7 +126,12 @@ export const SceneDirector: React.FC<Props> = ({
   const kicker = scene.kicker || '';
   const title = scene.headline || '';
   const subline = scene.subline;
-  const titleNode = <Headline size={titleSize}>{title}</Headline>;
+  const titleLength = title.trim().length;
+  const fittedTitleSize = Math.max(
+    isLandscape ? 34 : 30,
+    Math.round(titleSize * Math.min(1, Math.pow(32 / Math.max(1, titleLength), 0.42))),
+  );
+  const titleNode = <Headline size={fittedTitleSize}>{title}</Headline>;
   const sublineNode = <Subline size={smallSize}>{subline}</Subline>;
 
   if (treatment === 'kinetic_typography') {
@@ -133,7 +141,7 @@ export const SceneDirector: React.FC<Props> = ({
     return <AbsoluteFill style={{ ...textBase, justifyContent: 'center', alignItems: 'center', padding: '12%' }}>
       <div style={{ width: '100%', maxWidth, transform: `scale(${scale})`, textAlign: 'center' }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={Math.max(52, Math.min(132, height * 0.095))} align="center" uppercase>{title}</Headline>
+        <Headline size={Math.max(42, Math.min(isLandscape ? 104 : 86, height * 0.072, fittedTitleSize * 1.22))} align="center" uppercase>{title}</Headline>
         <div style={{ width: '22%', height: 4, margin: '28px auto 0', background: themeColor }} />
         <div style={{ textAlign: 'center' }}><Subline size={smallSize}>{subline}</Subline></div>
       </div>
@@ -166,11 +174,13 @@ export const SceneDirector: React.FC<Props> = ({
           {sublineNode}
         </div>
         <BulletList items={scene.bullets} color={themeColor} horizontal={isLandscape} />
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', marginTop: 22,
-          opacity: 0.75, color: themeColor, font: '700 12px "JetBrains Mono", monospace',
-          letterSpacing: '0.15em',
-        }}><span>INPUT</span><span>PROCESS</span><span>OUTCOME</span></div>
+        {scene.bullets?.length ? (
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', marginTop: 18,
+            opacity: 0.78, color: themeColor, font: '700 11px "JetBrains Mono", monospace',
+            letterSpacing: '0.13em',
+          }}><span>INPUT</span><span>PROCESS</span><span>OUTCOME</span></div>
+        ) : null}
       </div>
     </AbsoluteFill>;
   }
@@ -290,7 +300,7 @@ export const SceneDirector: React.FC<Props> = ({
     }}>
       <div style={{ maxWidth: maxWidth * 0.92, borderLeft: `5px solid ${themeColor}`, paddingLeft: 22 }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={Math.max(46, Math.min(100, height * 0.075))} uppercase>{title}</Headline>
+        <Headline size={Math.max(34, Math.min(76, height * 0.058, fittedTitleSize * 1.12))} uppercase>{title}</Headline>
         <Subline size={smallSize}>{subline}</Subline>
       </div>
     </AbsoluteFill>;

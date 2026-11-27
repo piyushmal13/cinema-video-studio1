@@ -42,8 +42,8 @@ const SubtitleOverlay: React.FC<{
     (item) => currentSec >= item.startSec && currentSec <= item.endSec
   );
   const style = scene?.captionStyle || 'documentary';
-  const visibleWords = words.slice(activeIndex, Math.min(words.length, activeIndex + 4));
-  const fontSize = Math.max(19, Math.min(34, height * (isLandscape ? 0.021 : 0.019)));
+  const visibleWords = words.slice(activeIndex, Math.min(words.length, activeIndex + 3));
+  const fontSize = Math.max(18, Math.min(30, height * (isLandscape ? 0.018 : 0.016)));
   const minimal = style === 'minimal';
   const documentary = style === 'documentary';
   const ticker = style === 'ticker';
@@ -51,24 +51,26 @@ const SubtitleOverlay: React.FC<{
   return (
     <div style={{
       position: 'absolute',
-      bottom: isLandscape ? '10%' : '13%',
-      left: ticker ? '5%' : '7%',
-      right: ticker ? '5%' : '7%',
+      bottom: isLandscape ? '6%' : '6.5%',
+      left: '8%',
+      right: '8%',
       display: 'flex',
-      justifyContent: ticker || documentary ? 'flex-start' : 'center',
+      justifyContent: 'center',
       flexWrap: 'wrap',
       alignItems: 'center',
-      gap: minimal ? '5px' : '8px',
+      gap: minimal ? '4px' : '6px',
       zIndex: 30,
       pointerEvents: 'none',
-      padding: ticker ? '11px 16px' : documentary ? '0 0 0 14px' : '8px 12px',
-      borderLeft: ticker || documentary ? `3px solid ${themeColor}` : 'none',
+      padding: ticker ? '8px 12px' : documentary ? '6px 10px' : '6px 10px',
+      borderLeft: ticker || documentary ? `2px solid ${themeColor}` : 'none',
       background: ticker
         ? 'rgba(3,7,13,0.88)'
         : documentary
           ? 'linear-gradient(90deg,rgba(3,7,13,0.72),transparent)'
           : 'transparent',
-      maxWidth: isLandscape ? '76%' : undefined,
+      maxWidth: isLandscape ? '76%' : '84%',
+      maxHeight: '8%',
+      overflow: 'hidden',
       margin: isLandscape && !ticker && !documentary ? '0 auto' : undefined,
     }}>
       {visibleWords.map((item, index) => {
@@ -76,15 +78,15 @@ const SubtitleOverlay: React.FC<{
         return (
           <span key={`${item.word}-${activeIndex + index}`} style={{
             fontFamily: ticker ? '"JetBrains Mono", monospace' : '"Montserrat", system-ui, sans-serif',
-            fontSize: current ? fontSize : fontSize * 0.86,
+            fontSize: current ? fontSize : fontSize * 0.92,
             fontWeight: current ? 900 : 700,
             letterSpacing: ticker ? '0.01em' : '0.015em',
             textTransform: ticker ? 'none' : 'uppercase',
-            color: current ? (documentary ? '#FFFFFF' : themeColor) : '#F8FAFC',
-            background: minimal ? 'transparent' : current ? 'rgba(4,8,14,0.78)' : 'rgba(4,8,14,0.56)',
-            padding: minimal ? '0 2px' : '4px 9px',
+            color: current ? themeColor : '#E2E8F0',
+            background: 'rgba(3,7,13,0.84)',
+            padding: '3px 7px',
             borderBottom: documentary && current ? `2px solid ${themeColor}` : 'none',
-            borderRadius: minimal ? 0 : 5,
+            borderRadius: 4,
             textShadow: '0 3px 18px rgba(0,0,0,0.92)',
           }}>{item.word}</span>
         );
@@ -242,7 +244,7 @@ const SceneCardOverlay: React.FC<{
               gap: 12,
               width: '100%',
               marginTop: 6,
-              textAlign: 'left',
+              textAlign: 'center',
             }}
           >
             {scene.bullets.slice(0, 4).map((bullet, index) => (
@@ -413,7 +415,7 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
   const { fps } = useVideoConfig();
   const themeColor = videoData.themeColor || '#D4AF37';
   const scenes = videoData.scenes || [];
-  const transitionFrames = scenes.length > 1 ? 8 : 0;
+  const transitionFrames = scenes.length > 1 ? 2 : 0;
   const sceneDurations = scenes.map((scene) =>
     Math.max(15, Math.round((scene.endSec - scene.startSec) * fps))
   );
@@ -534,20 +536,20 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
         <div
           style={{
             position: 'absolute',
-            top: videoData.isLandscape ? '5%' : '14%',
-            left: 0,
-            right: 0,
+            top: videoData.isLandscape ? '4.5%' : '5.5%',
+            left: '7%',
+            right: '7%',
             fontFamily: 'monospace',
-            fontSize: 18,
+            fontSize: 13,
             fontWeight: 800,
-            letterSpacing: '0.16em',
+            letterSpacing: '0.18em',
             color: themeColor,
-            backgroundColor: 'rgba(5, 8, 15, 0.72)',
-            padding: '6px 14px',
-            borderRadius: '8px',
-            border: `1px solid ${themeColor}44`,
+            backgroundColor: 'transparent',
+            padding: '4px 0',
+            borderRadius: 0,
+            border: 'none',
             zIndex: 40,
-            textAlign: 'center',
+            textAlign: 'left',
           }}
         >
           {videoData.brandTag}

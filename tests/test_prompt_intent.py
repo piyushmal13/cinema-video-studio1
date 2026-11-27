@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from scripts.prompt_intent import (
     compose_story_prompt,
@@ -178,6 +179,18 @@ class PromptIntentTests(unittest.TestCase):
         self.assertEqual(intent.input_mode, "script")
         self.assertEqual(intent.script_text, supplied)
         self.assertEqual(intent.voice, "hi-IN-MadhurNeural")
+
+
+    def test_ifx_brand_profile_can_be_enabled_for_every_production(self):
+        with patch.dict("os.environ", {"CINEMA_BRAND_PROFILE": "IFXTRADES"}):
+            intent = parse_prompt_intent("Explain how gold spreads work")
+        self.assertEqual(intent.brand, "IFXTRADES")
+        self.assertEqual(intent.color, "#D4AF37")
+
+    def test_explicit_brand_exclusion_overrides_ifx_profile(self):
+        with patch.dict("os.environ", {"CINEMA_BRAND_PROFILE": "IFXTRADES"}):
+            intent = parse_prompt_intent("Explain gold spreads without IFX Trades branding")
+        self.assertEqual(intent.brand, "")
 
 
 if __name__ == "__main__":

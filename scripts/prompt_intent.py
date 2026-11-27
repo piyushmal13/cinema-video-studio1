@@ -1,4 +1,5 @@
 import math
+import os
 import re
 from dataclasses import dataclass
 
@@ -106,6 +107,9 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
         if len(brand) > 32:
             raise ValueError("Brand names must be 32 characters or fewer.")
     else:
+        configured_brand = os.environ.get("CINEMA_BRAND_PROFILE", "").strip().upper()
+        if configured_brand == "IFXTRADES":
+            brand = "IFXTRADES"
         ifx_mentioned = bool(
             re.search(r"\b(?:IFX\s*Trades|IndiaFXTrades|India\s*FX\s*Trades)\b", original, re.IGNORECASE)
         )
@@ -119,6 +123,8 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
         )
         if ifx_mentioned and not ifx_explicitly_excluded:
             brand = "IFXTRADES"
+        if ifx_explicitly_excluded:
+            brand = ""
 
     # IFX's gold is a brand treatment, not the global default for unrelated videos.
     color = "#D4AF37" if brand == "IFXTRADES" else "#A8B2C0"

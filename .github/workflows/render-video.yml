@@ -48,7 +48,7 @@ jobs:
         run: |
           npm ci
           pip install -r requirements.txt
-          if ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg tesseract-ocr; fi
 
       - name: Verify media and audio tools
         run: python -c "import auto_editor, gradio_client, gtts, librosa, mutagen, soundfile; print('media and audio dependencies ready')"
@@ -93,6 +93,7 @@ jobs:
           CINEMA_MAX_VIDEO_CLIPS: '5'
           CINEMA_VIDEO_CLIP_TIMEOUT: '45'
           PREFER_GEMINI: '1'
+          CINEMA_BRAND_PROFILE: 'IFXTRADES'
         run: |
           if [ -f out/reference_style.json ]; then
             export PROMPT_CONTEXT="$(python scripts/reference_context.py --report out/reference_style.json --existing "$PROMPT_CONTEXT")"
@@ -108,6 +109,9 @@ jobs:
           else
             npm run build
           fi
+
+      - name: Enforce MP4 and text-overlap quality gate
+        run: python scripts/render_quality_gate.py --video out/final.mp4 --report out/render_quality_report.json --ocr
 
       - name: Generate cover and social publishing package
         run: python scripts/post_production.py --video out/final.mp4 --data public/video_data.json --output-dir out
@@ -125,6 +129,7 @@ jobs:
             out/hardware_report.json
             out/model_admission.json
             out/production_ledger.jsonl
+            out/render_quality_report.json
             out/reference_style.json
             out/reference_frames/**
             out/reference_crops/**
