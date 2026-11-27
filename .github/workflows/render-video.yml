@@ -54,7 +54,7 @@ jobs:
         run: python -c "import auto_editor, gradio_client, gtts, librosa, mutagen, soundfile; print('media and audio dependencies ready')"
 
       - name: Fetch and analyze user-supplied Telegram reference
-        if: env.REFERENCE_FILE_ID != ''
+        if: github.event.client_payload.reference_file_id != ''
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           REFERENCE_FILE_ID: ${{ github.event.client_payload.reference_file_id }}
