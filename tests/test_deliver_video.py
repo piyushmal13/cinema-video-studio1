@@ -125,6 +125,41 @@ class TelegramDeliveryTests(unittest.TestCase):
                     post=Mock(),
                 )
 
+    def test_uses_custom_caption_and_thumbnail_for_telegram_delivery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "final.mp4"
+            video.write_bytes(b"small video")
+            thumbnail = Path(temp_dir) / "cover.jpg"
+            thumbnail.write_bytes(bytes([255, 216]) + b"x" * 6000)
+            response = Mock(status_code=200, json=lambda: {"ok": True})
+            post = Mock(return_value=response)
+
+            deliver_video(
+                video,
+                "test-token",
+                "123",
+                post=post,
+                caption="A subject-specific update #MarketUpdate",
+                thumbnail_path=thumbnail,
+            )
+
+        self.assertEqual(post.call_args.kwargs["data"]["caption"], "A subject-specific update #MarketUpdate")
+        self.assertIn("thumbnail", post.call_args.kwargs["files"])
+
+    def test_413_fallback_keeps_generated_caption_in_download_message(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "final.mp4"
+            video.write_bytes(b"small but rejected")
+            post = Mock(side_effect=[
+                Mock(status_code=413, json=lambda: {"ok": False, "description": "Request Entity Too Large"}),
+                Mock(status_code=200, json=lambda: {"status": "success", "data": {"url": "https://tmpfiles.org/123/final.mp4"}}),
+                Mock(status_code=200, json=lambda: {"ok": True}),
+            ])
+            deliver_video(video, "test-token", "123", post=post, caption="A subject-specific market update")
+        message = post.call_args.kwargs["data"]["text"]
+        self.assertIn("A subject-specific market update", message)
+        self.assertIn("within 48 hours", message)
+
     def test_reports_telegram_api_rejection(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             video = Path(temp_dir) / "final.mp4"
