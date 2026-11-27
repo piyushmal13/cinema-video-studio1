@@ -11,14 +11,22 @@ from scripts.viral_engineer import (
 
 
 class ViralEngineerTests(unittest.TestCase):
-    def test_short_form_defaults_to_phonk_and_targets_three_second_cuts(self):
+    def test_short_form_defaults_to_subject_led_editorial_not_phonk(self):
         plan = build_viral_plan("Explain compound interest", "shorts", 45)
 
-        self.assertEqual(plan.archetype, "phonk")
-        self.assertEqual(plan.score_style, "phonk")
-        self.assertTrue(plan.beat_sync)
-        self.assertTrue(plan.fast_cuts)
-        self.assertEqual(plan.scene_count, 14)
+        self.assertEqual(plan.archetype, "editorial")
+        self.assertEqual(plan.score_style, "cinema")
+        self.assertFalse(plan.beat_sync)
+        self.assertFalse(plan.fast_cuts)
+        self.assertEqual(plan.scene_count, 10)
+
+    def test_market_and_commercial_requests_choose_their_own_director(self):
+        market = build_viral_plan("Aaj ka gold market update", "shorts", 50)
+        commercial = build_viral_plan("Create a product launch advertisement", "shorts", 45)
+
+        self.assertEqual(market.archetype, "newsroom")
+        self.assertFalse(market.fast_cuts)
+        self.assertEqual(commercial.archetype, "commercial")
 
     def test_meme_and_cinema_select_distinct_audio_and_pacing(self):
         meme = build_viral_plan("--meme Explain a market lesson", "shorts", 30)
@@ -70,9 +78,8 @@ class ViralEngineerTests(unittest.TestCase):
         prompt = enhance_story_prompt("Explain gold", plan)
 
         self.assertIn("Explain gold", prompt)
-        self.assertIn("approximately 11 scenes", prompt)
-        self.assertIn("between 10 and 14", prompt)
-        self.assertIn("pattern-interrupt hook", prompt)
+        self.assertIn("Explain gold", prompt)
+        self.assertIn("subject-led editorial storytelling", prompt)
 
 
 if __name__ == "__main__":
