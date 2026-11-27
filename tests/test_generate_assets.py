@@ -713,7 +713,7 @@ class GenerateAssetsTests(unittest.TestCase):
             [
                 "https://text.pollinations.ai/openai",
                 "https://text.pollinations.ai/openai",
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
             ],
         )
         self.assertEqual(
