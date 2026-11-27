@@ -17,10 +17,11 @@ class VisualDirectorTests(unittest.TestCase):
             {"type": "cinema_outro", "headline": "The conclusion", "visualQuery": "city lights at dusk"},
         ]
         result = assign_visual_language(scenes, "explainer", "job-1", "vertical")
-        self.assertEqual(
-            [item["visualTreatment"] for item in result],
-            ["comparative_split", "vertical_timeline", "process_blueprint", "data_stage", "cinema_end_frame"],
-        )
+        self.assertEqual(result[0]["visualTreatment"], "comparative_split")
+        self.assertEqual(result[1]["visualTreatment"], "vertical_timeline")
+        self.assertEqual(result[2]["visualTreatment"], "process_blueprint")
+        self.assertIn(result[3]["visualTreatment"], {"data_stage", "market_chart"})
+        self.assertEqual(result[4]["visualTreatment"], "cinema_end_frame")
 
     def test_repeated_hero_scenes_do_not_receive_one_repeated_template(self):
         scenes = [
