@@ -1,0 +1,24 @@
+# Optional Dagu DAG for a self-hosted reference-analysis smoke test.
+# It runs only when an operator provides local reference files on the Dagu host.
+# Dagu is a separate process; no Dagu runtime is installed by GitHub Actions.
+name: cinema-reference-analysis
+description: Inspect supplied reference footage/images and write a style brief
+params:
+  - name: REFERENCE_VIDEO
+    default: ""
+  - name: REFERENCE_IMAGES
+    default: ""
+  - name: OUTPUT_DIR
+    default: out/dagu-reference
+steps:
+  - name: prepare-output
+    command: mkdir -p "{{.OUTPUT_DIR}}"
+  - name: inspect-reference
+    command: >-
+      python scripts/reference_analyzer.py
+      --output "{{.OUTPUT_DIR}}/reference_style.json"
+      --contact-sheet-dir "{{.OUTPUT_DIR}}/frames"
+      {{if .REFERENCE_VIDEO}}--video "{{.REFERENCE_VIDEO}}"{{end}}
+      {{if .REFERENCE_IMAGES}}--images {{.REFERENCE_IMAGES}}{{end}}
+    depends:
+      - prepare-output
