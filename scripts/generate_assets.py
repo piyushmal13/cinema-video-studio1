@@ -1639,7 +1639,7 @@ def main():
     if intent.brand == "IFXTRADES" and trending_context:
         source_domains = sorted({
             match.group(1).lower()
-            for match in re.finditer(r"https?://(?:www\\.)?([^/\\s)]+)", trending_context)
+            for match in re.finditer(r"https?://(?:www\.)?([^/\s)]+)", trending_context)
         })
         if source_domains:
             source_note = "RESEARCH LEADS · " + " · ".join(source_domains[:3])
