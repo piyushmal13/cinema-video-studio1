@@ -51,17 +51,17 @@ const SubtitleOverlay: React.FC<{
   return (
     <div style={{
       position: 'absolute',
-      bottom: isLandscape ? '6%' : '6.5%',
+      bottom: isLandscape ? '3.5%' : '3.5%',
       left: '8%',
       right: '8%',
       display: 'flex',
       justifyContent: 'center',
       flexWrap: 'wrap',
       alignItems: 'center',
-      gap: minimal ? '4px' : '6px',
+      gap: minimal ? '3px' : '4px',
       zIndex: 30,
       pointerEvents: 'none',
-      padding: ticker ? '8px 12px' : documentary ? '6px 10px' : '6px 10px',
+      padding: ticker ? '6px 10px' : documentary ? '5px 9px' : '5px 9px',
       borderLeft: ticker || documentary ? `2px solid ${themeColor}` : 'none',
       background: ticker
         ? 'rgba(3,7,13,0.88)'
@@ -69,7 +69,7 @@ const SubtitleOverlay: React.FC<{
           ? 'linear-gradient(90deg,rgba(3,7,13,0.72),transparent)'
           : 'transparent',
       maxWidth: isLandscape ? '76%' : '84%',
-      maxHeight: '8%',
+      maxHeight: '6%',
       overflow: 'hidden',
       margin: isLandscape && !ticker && !documentary ? '0 auto' : undefined,
     }}>
@@ -441,7 +441,8 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
       <TransitionSeries>
         {scenes.map((scene, index) => {
           const durationFrames = paddedDurations[index];
-          const cleanMedia = (scene.mediaFile || '').replace(/^\/?public\//, '');
+          const textOnly = scene.visualTreatment === 'kinetic_typography' || scene.type === 'kinetic_type';
+          const cleanMedia = textOnly ? '' : (scene.mediaFile || '').replace(/^\/?public\//, '');
           const cue =
             scene.sfxCue === 'boom'
               ? 'boom'
@@ -465,11 +466,11 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
                 <AbsoluteFill>
                   <CinemaBackdrop
                     mediaFile={cleanMedia}
-                    mediaKind={scene.mediaKind}
+                    mediaKind={textOnly ? 'none' : scene.mediaKind}
                     cameraMotion={scene.cameraMotion}
                     sceneType={scene.type}
                     visualTreatment={scene.visualTreatment}
-                    mediaFiles={scene.mediaFiles}
+                    mediaFiles={textOnly ? [] : scene.mediaFiles}
                     sceneIndex={index}
                     motionDurationInFrames={durationFrames}
                     beatSync={videoData.beatSync}

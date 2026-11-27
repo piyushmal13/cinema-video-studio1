@@ -23,5 +23,16 @@ class RenderQualityGateTests(unittest.TestCase):
         self.assertEqual(overlapping_boxes(rows), [])
 
 
+    def test_quality_gate_cli_help_has_no_duplicate_video_data_option(self):
+        import subprocess
+        import sys
+        result = subprocess.run(
+            [sys.executable, "scripts/render_quality_gate.py", "--help"],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--video-data", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

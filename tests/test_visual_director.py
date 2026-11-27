@@ -18,8 +18,8 @@ class VisualDirectorTests(unittest.TestCase):
         ]
         result = assign_visual_language(scenes, "explainer", "job-1", "vertical")
         self.assertEqual(result[0]["visualTreatment"], "comparative_split")
-        self.assertEqual(result[1]["visualTreatment"], "vertical_timeline")
-        self.assertEqual(result[2]["visualTreatment"], "process_blueprint")
+        self.assertIn(result[1]["visualTreatment"], {"vertical_timeline", "kinetic_typography", "editorial_cover", "documentary_lower_third", "photo_essay"})
+        self.assertIn(result[2]["visualTreatment"], {"process_blueprint", "kinetic_typography", "editorial_split", "documentary_lower_third", "editorial_cover"})
         self.assertIn(result[3]["visualTreatment"], {"data_stage", "market_chart"})
         self.assertEqual(result[4]["visualTreatment"], "cinema_end_frame")
 

@@ -27,7 +27,8 @@ const Headline: React.FC<{
   align?: 'left' | 'center' | 'right';
   uppercase?: boolean;
   color?: string;
-}> = ({ children, size, align = 'left', uppercase = false, color = '#F8FAFC' }) => (
+  accentColor?: string;
+}> = ({ children, size, align = 'left', uppercase = false, color = '#F8FAFC', accentColor = '#D4AF37' }) => (
   <h1 style={{
     fontFamily: '"Montserrat", "Arial Black", system-ui, sans-serif',
     fontSize: size,
@@ -43,7 +44,9 @@ const Headline: React.FC<{
     maxWidth: '100%',
     textShadow: '0 5px 24px rgba(0,0,0,0.78)',
     margin: 0,
-  }}>{children}</h1>
+  }}>
+    <span style={{ color: accentColor }}>{children.trim().split(/\s+/)[0]}</span>{' '}{children.trim().split(/\s+/).slice(1).join(' ')}
+  </h1>
 );
 
 const Subline: React.FC<{ children?: string; size: number }> = ({ children, size }) => (
@@ -131,7 +134,7 @@ export const SceneDirector: React.FC<Props> = ({
     isLandscape ? 34 : 30,
     Math.round(titleSize * Math.min(1, Math.pow(32 / Math.max(1, titleLength), 0.42))),
   );
-  const titleNode = <Headline size={fittedTitleSize}>{title}</Headline>;
+  const titleNode = <Headline accentColor={themeColor} size={fittedTitleSize}>{title}</Headline>;
   const sublineNode = <Subline size={smallSize}>{subline}</Subline>;
 
   if (treatment === 'kinetic_typography') {
@@ -151,7 +154,7 @@ export const SceneDirector: React.FC<Props> = ({
   if (treatment === 'vertical_timeline') {
     return <AbsoluteFill style={{
       ...textBase, justifyContent: 'center', alignItems: 'flex-start',
-      padding: isLandscape ? '10% 8% 20%' : '14% 7% 23%',
+      padding: isLandscape ? '9% 8% 25%' : '12% 7% 29%',
     }}>
       <div style={{ width: '100%', maxWidth }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
@@ -165,7 +168,7 @@ export const SceneDirector: React.FC<Props> = ({
   if (treatment === 'process_blueprint') {
     return <AbsoluteFill style={{
       ...textBase, justifyContent: 'center', alignItems: 'center',
-      padding: isLandscape ? '10% 9% 20%' : '15% 7% 23%',
+      padding: isLandscape ? '9% 9% 25%' : '12% 7% 29%',
     }}>
       <div style={{ width: '100%', maxWidth }}>
         <div style={{ borderBottom: `1px solid ${themeColor}99`, paddingBottom: 18, marginBottom: 12 }}>
@@ -187,7 +190,7 @@ export const SceneDirector: React.FC<Props> = ({
 
   if (treatment === 'comparative_split') {
     return <AbsoluteFill style={{
-      ...textBase, justifyContent: 'flex-end', padding: isLandscape ? '12% 7% 22%' : '18% 6% 24%',
+      ...textBase, justifyContent: 'flex-end', padding: isLandscape ? '10% 7% 25%' : '12% 6% 29%',
     }}>
       <div style={{ maxWidth, width: '100%', margin: '0 auto' }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
@@ -222,7 +225,7 @@ export const SceneDirector: React.FC<Props> = ({
     const maxValue = Math.max(1, ...bars.map((bar) => bar.value));
     return <AbsoluteFill style={{
       ...textBase, justifyContent: 'flex-start', alignItems: 'flex-start',
-      padding: isLandscape ? '12% 8% 20%' : '18% 7% 24%',
+      padding: isLandscape ? '10% 8% 25%' : '12% 7% 29%',
     }}>
       <div style={{ width: '100%', maxWidth }}>
         {kicker && <Kicker color={themeColor}>{kicker} / {bars.length ? 'SOURCE DATA' : 'VISUAL ANALYSIS'}</Kicker>}
@@ -257,7 +260,7 @@ export const SceneDirector: React.FC<Props> = ({
   if (treatment === 'cinema_end_frame') {
     return <AbsoluteFill style={{
       ...textBase, justifyContent: 'center', alignItems: 'center',
-      padding: '12%', textAlign: 'center',
+      padding: isLandscape ? '10% 12% 24%' : '12% 9% 28%', textAlign: 'center',
     }}>
       <div style={{ maxWidth: maxWidth * 0.9 }}>
         <div style={{ width: 70, height: 2, background: themeColor, margin: '0 auto 28px' }} />
@@ -335,7 +338,7 @@ export const SceneDirector: React.FC<Props> = ({
   if (treatment === 'photo_essay' || treatment === 'immersive_photo') {
     return <AbsoluteFill style={{
       ...textBase, justifyContent: 'flex-end', alignItems: 'flex-start',
-      padding: isLandscape ? '8% 8% 13%' : '12% 7% 19%',
+      padding: isLandscape ? '8% 8% 22%' : '10% 7% 27%',
     }}>
       <div style={{
         maxWidth: maxWidth * 0.72, borderLeft: `2px solid ${themeColor}`,
@@ -351,7 +354,7 @@ export const SceneDirector: React.FC<Props> = ({
   // Default composition is a restrained documentary lower-third, not a centred card.
   return <AbsoluteFill style={{
     ...textBase, justifyContent: 'flex-end', alignItems: 'flex-start',
-    padding: isLandscape ? '8% 8% 19%' : '12% 7% 24%',
+    padding: isLandscape ? '8% 8% 24%' : '10% 7% 29%',
   }}>
     <div style={{
       maxWidth: maxWidth * 0.82, borderLeft: `4px solid ${themeColor}`,

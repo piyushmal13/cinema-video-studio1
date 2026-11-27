@@ -104,7 +104,7 @@ Return ONLY one valid JSON object:
   cinematic_side_caption. The director may refine the composition to enforce film-wide variety.
 
 Available scene types: cinema_hero, three_d_globe, three_d_bars, candlestick_chart, split_compare, step_list, cinema_outro, kinetic_type, process_diagram, editorial_montage, data_viz.
-Use a different purposeful visual subject and shot family for every scene. Consecutive scenes must not repeat the same visual query, composition or treatment.
+Use a different purposeful visual subject and shot family for every scene. Consecutive scenes must not repeat the same visual query, composition or treatment. For explainers and stories, deliberately make roughly one in three scenes text-led kinetic typography: set type to kinetic_type and visualTreatment to kinetic_typography, use a concise memorable phrase plus one clear supporting line, and set mediaMode to graphic so no stock image is required. Vary between full-bleed footage, editorial photography, restrained data visuals, and text-only scenes; do not default to two-column comparison cards or repeated boxed layouts. Never place all explanatory text at the bottom; use a deliberate upper/middle safe area and leave a separate lower caption band.
 cameraMotion: zoom_in, zoom_out, pan_left, pan_right, dolly_push, tilt_up, tilt_down,
 drift_diagonal, handheld, static.
 sfxCue: boom, whoosh, riser, pulse.

@@ -123,16 +123,21 @@ def deliver_video(
         if thumb and thumb.is_file() and 0 < thumb.stat().st_size <= 200_000:
             thumbnail_file = stack.enter_context(thumb.open("rb"))
             files["thumbnail"] = (thumb.name, thumbnail_file, "image/jpeg")
-        response = post(
-            url,
-            data={
-                "chat_id": chat_id,
-                "caption": caption[:1024],
-                "supports_streaming": "true",
-            },
-            files=files,
-            timeout=(15, 300),
-        )
+        try:
+            response = post(
+                url,
+                data={
+                    "chat_id": chat_id,
+                    "caption": caption[:1024],
+                    "supports_streaming": "true",
+                },
+                files=files,
+                timeout=(15, 300),
+            )
+        except requests.RequestException:
+            print("Telegram video upload was interrupted; switching to a temporary download link.")
+            _send_public_host_link(source, bot_token, chat_id, post, caption)
+            return
 
     try:
         result = response.json()
