@@ -207,7 +207,9 @@ def build_fallback_storyboard(
             "Aakhir mein viewer ko ek useful takeaway dein, bina unsupported claims ke.",
         ] + blocks)
 
-    rng.shuffle(specs[1:-1])
+    middle_specs = list(specs[1:-1])
+    rng.shuffle(middle_specs)
+    specs = specs[:1] + middle_specs + specs[-1:]
     scenes = []
     for index, (scene_type, kicker, headline, visual_query, motion, cue) in enumerate(specs):
         scenes.append({
@@ -243,8 +245,9 @@ def generate_storyboard(
     mode: str = "shorts",
     is_hinglish: bool = False,
     variation_key: str = "",
+    script_mode: bool = False,
 ) -> dict:
-    minimum_words = max(30, min_narration_words)
+    minimum_words = max(1 if script_mode else 30, min_narration_words)
     variation_key = variation_key or JOB_ID
     variation_instruction = (
         f"\n\nCreative variation key: {variation_key}. This is a new production. "
@@ -367,7 +370,7 @@ def generate_storyboard(
         is_hinglish,
         min_words=minimum_words,
     )
-    return validate_storyboard(fallback, min(35, minimum_words))
+    return validate_storyboard(fallback, 1 if script_mode else min(35, minimum_words))
 
 
 
