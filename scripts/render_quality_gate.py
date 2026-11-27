@@ -92,7 +92,18 @@ def main() -> int:
     report = {"render": audit_render(args.video)}
     try:
         video_data = json.loads(Path(args.video_data).read_text(encoding="utf-8"))
-        report["plan"] = audit_visual_plan(video_data.get("scenes", []), "public")
+        plan = audit_visual_plan(video_data.get("scenes", []), "public")
+        critical_markers = (
+            "Scene media is missing:",
+            "Duplicate media files are reused",
+            "Visual grammar is too narrow:",
+            "Adjacent scenes repeat the same composition",
+        )
+        critical = [
+            warning for warning in plan.get("warnings", [])
+            if any(marker in warning for marker in critical_markers)
+        ]
+        report["plan"] = {**plan, "critical_warnings": critical, "passed": bool(plan.get("passed")) and not critical}
     except (OSError, ValueError, TypeError) as error:
         report["plan"] = {"passed": False, "errors": [f"Could not inspect storyboard data: {error}"]}
     if args.ocr:
