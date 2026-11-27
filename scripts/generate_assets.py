@@ -462,23 +462,47 @@ def try_generate_ai_video_clip(
     orientation: str,
     out_mp4: str,
 ) -> bool:
-    if idx not in {0, 2}:
+    if os.environ.get("CINEMA_OFFLINE") == "1":
         return False
     cache = MediaAssetCache()
-    cached = cache.get(prompt, orientation, expected_kind="video")
+    cached = cache.get(
+        prompt, orientation, expected_kind="video", variation=JOB_ID
+    )
     if cached:
         cached_path, _ = cached
         os.makedirs(os.path.dirname(out_mp4) or ".", exist_ok=True)
         shutil.copyfile(cached_path, out_mp4)
-        print(f"Using cached motion clip for scene {idx}.")
-        return True
+        print(f"Using this production's cached motion clip for scene {idx}.")
+        return _is_valid_mp4(out_mp4)
 
-    deadline = time.monotonic() + 45
+    os.makedirs(os.path.dirname(out_mp4) or ".", exist_ok=True)
+
+    # First use an optional user-configured ComfyUI workflow. It may run on Colab,
+    # a self-hosted GPU or another reachable machine; it is never assumed to exist.
+    try:
+        comfy_outputs = generate_from_environment(
+            prompt,
+            os.path.dirname(out_mp4) or "public/media",
+            media_kind="video",
+            seed=stable_visual_seed(JOB_ID, idx, prompt),
+        )
+        for candidate in comfy_outputs:
+            if candidate.suffix.lower() == ".mp4" and _is_valid_mp4(str(candidate)):
+                shutil.copyfile(candidate, out_mp4)
+                if _is_valid_mp4(out_mp4):
+                    cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
+                    print(f"Generated scene {idx} motion with configured ComfyUI.")
+                    return True
+    except Exception as error:
+        print(f"Optional ComfyUI video route unavailable for scene {idx}: {error}")
+
+    deadline = time.monotonic() + max(15, int(os.environ.get("CINEMA_VIDEO_CLIP_TIMEOUT", "45")))
     width, height = (832, 480) if orientation == "landscape" else (480, 832)
-    encoded_prompt = urllib.parse.quote(
-        f"{prompt}, cinematic camera motion, coherent subject movement, no text",
-        safe="",
+    video_prompt = (
+        f"{prompt}, topic-specific documentary cinematography, "
+        "coherent physical movement, natural camera motion, no text, no watermark"
     )
+    encoded_prompt = urllib.parse.quote(video_prompt, safe="")
     model = os.environ.get("CINEMA_POLLINATIONS_VIDEO_MODEL", "wan")
     video_url = (
         f"https://video.pollinations.ai/prompt/{encoded_prompt}"
@@ -489,14 +513,13 @@ def try_generate_ai_video_clip(
         response = requests.get(
             video_url,
             headers={"Accept": "video/mp4"},
-            timeout=(4, min(15, max(1, deadline - time.monotonic()))),
+            timeout=(4, min(18, max(1, deadline - time.monotonic()))),
         )
         if response.status_code == 200 and len(response.content) <= 80_000_000:
-            os.makedirs(os.path.dirname(out_mp4) or ".", exist_ok=True)
             with open(out_mp4, "wb") as output_file:
                 output_file.write(response.content)
             if _is_valid_mp4(out_mp4):
-                cache.store(prompt, orientation, out_mp4, "video")
+                cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
                 print(f"Generated scene {idx} video with Pollinations.")
                 return True
         print(f"Pollinations video unavailable for scene {idx}: HTTP {response.status_code}.")
@@ -511,17 +534,9 @@ def try_generate_ai_video_clip(
     try:
         result = subprocess.run(
             [
-                sys.executable,
-                "-c",
-                _GRADIO_VIDEO_SCRIPT,
-                os.environ.get(
-                    "CINEMA_LTX_SPACE",
-                    "Lightricks/ltx-video-distilled",
-                ),
-                prompt,
-                str(width),
-                str(height),
-                out_mp4,
+                sys.executable, "-c", _GRADIO_VIDEO_SCRIPT,
+                os.environ.get("CINEMA_LTX_SPACE", "Lightricks/ltx-video-distilled"),
+                video_prompt, str(width), str(height), out_mp4,
                 str(max(1, int(remaining))),
             ],
             check=False,
@@ -536,7 +551,7 @@ def try_generate_ai_video_clip(
         return False
 
     if result.returncode == 0 and _is_valid_mp4(out_mp4):
-        cache.store(prompt, orientation, out_mp4, "video")
+        cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
         print(f"Generated scene {idx} video with Hugging Face ZeroGPU.")
         return True
     if os.path.isfile(out_mp4):
@@ -812,6 +827,25 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
     if try_wikimedia_video(query, idx, orientation, clip_path):
         return f"media/scene_{idx}_stock.mp4", "video"
 
+    # Optional ComfyUI still-image workflow can run on an existing GPU worker.
+    try:
+        comfy_outputs = generate_from_environment(
+            query,
+            "public/media",
+            media_kind="image",
+            seed=stable_visual_seed(JOB_ID, idx, query),
+        )
+        for candidate in comfy_outputs:
+            if candidate.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"} and candidate.is_file():
+                relative_path = f"media/scene_{idx}_comfy{candidate.suffix.lower()}"
+                destination = os.path.join("public", relative_path.replace("/", os.sep))
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+                shutil.copyfile(candidate, destination)
+                print(f"Generated scene {idx} still with configured ComfyUI.")
+                return relative_path, "image"
+    except Exception as error:
+        print(f"Optional ComfyUI image route unavailable for scene {idx}: {error}")
+
     try:
         width, height = (1280, 720) if orientation == "landscape" else (768, 1344)
         subjects = ", ".join(_visual_subject_terms(query))
@@ -819,14 +853,14 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
             f"Photorealistic documentary cinematography of exactly {subjects}; "
             f"the visible subject must directly match {subjects}. {query}. "
             "Natural photographic detail, physically plausible light, real camera optics, "
-            "high contrast obsidian and warm gold grade. NEGATIVE: NO anime, NO cartoon, "
+            "use a scene-specific natural grade appropriate to the subject. NEGATIVE: NO anime, NO cartoon, "
             "NO illustration, NO random portrait, NO text, NO watermark, NO logo, "
             "NO collage, NO clip-art, NO unrelated subject."
         )
         encoded_prompt = urllib.parse.quote(locked_prompt, safe="")
         image_url = (
             f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-            f"?width={width}&height={height}&model=flux&nologo=true&seed={idx + 101}"
+            f"?width={width}&height={height}&model=flux&nologo=true&seed={stable_visual_seed(JOB_ID, idx, query)}"
         )
         response = requests.get(image_url, timeout=(5, 20))
         content_type = response.headers.get("Content-Type", "").lower()
@@ -859,7 +893,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
         return "", "none"
 
     cache = MediaAssetCache()
-    cached = cache.get(query, orientation)
+    cached = cache.get(query, orientation, variation=JOB_ID)
     if cached:
         cached_path, media_kind = cached
         relative_path = f"media/scene_{idx}_cached{cached_path.suffix}"
@@ -876,7 +910,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
     )
     if media_kind != "none" and relative_path:
         source = os.path.join("public", relative_path.replace("/", os.sep))
-        cache.store(query, orientation, source, media_kind)
+        cache.store(query, orientation, source, media_kind, variation=JOB_ID)
     return relative_path, media_kind
 
 
