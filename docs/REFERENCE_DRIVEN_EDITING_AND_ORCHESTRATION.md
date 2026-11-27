@@ -14,28 +14,28 @@ The production contract should distinguish **reference intent** from **content t
 
 ## Reference analyzer added
 
-\`scripts/reference_analyzer.py\` is an offline-first CLI:
+`scripts/reference_analyzer.py` is an offline-first CLI:
 - Reads local video metadata with ffprobe.
 - Detects candidate cut points with FFmpeg scene detection.
 - Extracts a bounded contact sheet for human/vision review.
 - Reads reference image dimensions and average color with optional Pillow.
-- Can call a user-configured Ollama vision model (\`CINEMA_VISION_BASE_URL\`, \`CINEMA_VISION_MODEL\`) for image descriptions. Default is local Ollama; no image is sent anywhere unless the operator explicitly configures a remote endpoint.
-- Produces a machine-readable \`reference_style.json\` with limitations and editing guidance.
+- Uses the existing `GEMINI_API_KEY` for bounded Gemini multimodal image understanding when configured, resizing images before transmission; `GEMINI_MODEL` or `CINEMA_REFERENCE_VISION_MODEL` selects the model. If no Gemini key is configured, it can call a user-configured Ollama vision model (`CINEMA_VISION_BASE_URL`, `CINEMA_VISION_MODEL`).
+- Produces a machine-readable `reference_style.json` with limitations and editing guidance.
 - Smart-crops reference images to vertical, landscape or square while respecting an explicit focal point or a lightweight entropy-based focal heuristic.
 
 Important: the entropy heuristic is not semantic object detection. A production-grade crop should prefer a vision model's subject/focal-point output, then face/person detection where appropriate, then the heuristic, and finally a human override. Never crop logos, text, faces or product labels blindly.
 
 Example:
-\`\`\`bash
+```bash
 python scripts/reference_analyzer.py --video /data/reference.mp4 --images /data/product.jpg /data/logo.png --crop-to vertical
-\`\`\`
+```
 
-For local vision:
-\`\`\`bash
+Gemini vision uses the existing API key and may consume API quota or incur charges according to the Google AI plan. It only runs when a reference attachment is present. To avoid external image transmission, omit the Gemini key for the analysis step and configure a private Ollama vision endpoint instead:
+```bash
 ollama pull qwen2.5vl:3b
 CINEMA_VISION_MODEL=qwen2.5vl:3b python scripts/reference_analyzer.py --images /data/reference.jpg
-\`\`\`
-Model availability and VRAM requirements vary; test on the actual host before enabling it. The user's known 4 GB AMD GPU is not a dependable modern video-diffusion target. The vision call is optional and is not a requirement for CPU editorial rendering.
+```
+Model availability and VRAM requirements vary; test on the actual host before enabling it. Vision is optional and is not a requirement for CPU editorial rendering.
 
 ## Telegram reference ingestion now wired
 
@@ -97,7 +97,7 @@ Run the same synthetic production DAG 20 times on the same VPS and record:
 - install/upgrade/backup effort;
 - licence and any edition-gated capabilities.
 
-Workload: validate manifest → analyze reference → render a 5-second offline test → probe output → package artifacts. Use identical scripts and inputs for each engine. A Dagu DAG starter is in \`orchestration/dagu/cinema-reference-analysis.yaml\`. This repository change does not claim that Dagu has been installed on the user's VPS or benchmarked at runtime; remote host access and an approved deployment window are required.
+Workload: validate manifest → analyze reference → render a 5-second offline test → probe output → package artifacts. Use identical scripts and inputs for each engine. A Dagu DAG starter is in `orchestration/dagu/cinema-reference-analysis.yaml`. This repository change does not claim that Dagu has been installed on the user's VPS or benchmarked at runtime; remote host access and an approved deployment window are required.
 
 ## Sources
 
