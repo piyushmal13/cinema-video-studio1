@@ -40,6 +40,7 @@ if __package__:
     from .speech_alignment import align_with_whisperx
     from .timeline_export import export_otio
     from .visual_quality import audit_visual_plan
+    from .kokoro_tts import generate_from_environment as generate_kokoro_from_environment
 else:
     from prompt_intent import compose_story_prompt, parse_prompt_intent, validate_storyboard
     from viral_engineer import (
@@ -63,6 +64,7 @@ else:
     from speech_alignment import align_with_whisperx
     from timeline_export import export_otio
     from visual_quality import audit_visual_plan
+    from kokoro_tts import generate_from_environment as generate_kokoro_from_environment
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
@@ -1370,6 +1372,17 @@ async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
     temporary_path = f"{out_mp3}.tmp.mp3"
     os.makedirs(os.path.dirname(out_mp3) or ".", exist_ok=True)
     edge_errors = []
+
+    try:
+        kokoro_result = generate_kokoro_from_environment(
+            cleaned_text,
+            out_mp3,
+            language="hi" if voice.startswith("hi-IN-") else "en",
+        )
+        if kokoro_result is not None:
+            return kokoro_result
+    except Exception as error:
+        print(f"Optional Kokoro TTS route failed; continuing with Edge TTS: {error}")
 
     for candidate_voice in voices:
         if os.path.exists(temporary_path):
