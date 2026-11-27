@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -30,6 +32,7 @@ class ProductionRoute:
     duration_sec: int
     documentary: bool
     research_context: str = ""
+    market_update: bool = False
 
 
 def _explicit_duration(prompt: str) -> int | None:
@@ -57,6 +60,100 @@ def _query_text(prompt: str) -> str:
     cleaned = re.sub(r"/(?:video|movie|cinema|reel)(?:@\w+)?", " ", prompt, flags=re.I)
     cleaned = re.sub(r"--[\w=-]+", " ", cleaned)
     return re.sub(r"\s+", " ", cleaned).strip()[:300]
+
+
+def is_market_update_request(prompt: str) -> bool:
+    market_term = bool(re.search(
+        r"\b(?:market|markets|forex|fx|xauusd|gold|silver|dxy|nasdaq|nifty|sensex|"
+        r"crypto|bitcoin|btc|eurusd|gbpusd|usdjpy|cpi|nfp|fomc|fed|bond yields?)\b",
+        prompt, re.I,
+    ))
+    current_request = bool(re.search(
+        r"\b(?:today|aaj|latest|current|update|overview|outlook|right now|this session|"
+        r"what happened|what is moving|daily)\b",
+        prompt, re.I,
+    ))
+    return market_term and current_request
+
+
+def fetch_market_quotes(timeout: float = 3.0) -> str:
+    """Fetch timestamped indicative public market quotes; never substitute futures for spot."""
+    symbols = [
+        ("GC=F", "Gold futures (not XAUUSD spot)"),
+        ("DX-Y.NYB", "US Dollar Index"),
+        ("^TNX", "US 10-year Treasury yield"),
+        ("^NSEI", "NIFTY 50"),
+        ("^IXIC", "NASDAQ Composite"),
+    ]
+    retrieved_at = datetime.now(timezone.utc).astimezone(
+        ZoneInfo("Asia/Kolkata")
+    ).isoformat(timespec="seconds")
+    lines = [f"Market data retrieved at {retrieved_at} (Asia/Kolkata)."]
+    for symbol, label in symbols:
+        try:
+            response = requests.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                params={"range": "1d", "interval": "5m"},
+                headers={"User-Agent": "Mozilla/5.0 CinemaVideoStudio/1.0"},
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            result = payload.get("chart", {}).get("result") or []
+            if not result:
+                continue
+            item = result[0]
+            meta = item.get("meta", {})
+            quote = (item.get("indicators", {}).get("quote") or [{}])[0]
+            closes = quote.get("close") or []
+            timestamps = item.get("timestamp") or []
+            latest_pair = next(
+                ((float(value), int(timestamps[index])) for index, value in reversed(list(enumerate(closes)))
+                 if value is not None and index < len(timestamps)),
+                None,
+            )
+            price = meta.get("regularMarketPrice")
+            timestamp = meta.get("regularMarketTime")
+            if price is None and latest_pair:
+                price, timestamp = latest_pair
+            if price is None:
+                continue
+            previous = meta.get("chartPreviousClose") or meta.get("previousClose")
+            change = None
+            if isinstance(previous, (int, float)) and previous:
+                change = (float(price) - float(previous)) / float(previous) * 100
+            quote_time = (
+                datetime.fromtimestamp(int(timestamp), timezone.utc)
+                .astimezone(ZoneInfo("Asia/Kolkata"))
+                .isoformat(timespec="minutes")
+                if timestamp else "timestamp unavailable"
+            )
+            currency = str(meta.get("currency") or "")
+            price_text = f"{float(price):,.4f} {currency}".strip()
+            change_text = f", {change:+.2f}% versus previous close" if change is not None else ""
+            lines.append(
+                f"{label}: {price_text}{change_text}; quote timestamp {quote_time}; "
+                f"source https://finance.yahoo.com/quote/{symbol}"
+            )
+        except (requests.RequestException, ValueError, TypeError, KeyError, OverflowError) as error:
+            print(f"Market quote unavailable for {symbol}: {error}")
+    if len(lines) == 1:
+        lines.append(
+            "No market quote provider returned a usable timestamped value. "
+            "Do not invent current prices or percentages."
+        )
+    lines.append(
+        "Instrument caution: GC=F is a gold futures contract and must not be labelled "
+        "as XAUUSD spot. Quote timestamps may be delayed or stale outside trading hours."
+    )
+    return "\n".join(lines)[:3200]
+
+
+def fetch_market_research(prompt: str, timeout: float = 4.0) -> str:
+    news_query = f"{_query_text(prompt)} market drivers today"
+    news = fetch_live_research(news_query, timeout=timeout)
+    quotes = fetch_market_quotes(timeout=min(timeout, 3.0))
+    return "\n\n".join(part for part in (quotes, news) if part)[:5200]
 
 
 def fetch_live_research(prompt: str, timeout: float = 6.0) -> str:
@@ -125,10 +222,9 @@ def route_production_request(
         raise ValueError("Format must be 'vertical' or 'landscape'.")
 
     explicit_duration = _explicit_duration(prompt)
-    detailed = len(prompt.split()) >= 25
+    market_update = is_market_update_request(prompt)
     documentary = bool(
         _DOCUMENTARY_TERMS.search(prompt)
-        or detailed
         or format_hint == "landscape"
         or (explicit_duration is not None and explicit_duration >= 120)
     )
@@ -136,9 +232,18 @@ def route_production_request(
         duration = documentary_duration_seconds(prompt, explicit_duration or 120)
         route_format = "landscape"
         flags = f"--movie --duration={duration}s"
-        research = fetch_live_research(prompt) if research_enabled else ""
+        research = (
+            fetch_market_research(prompt) if market_update and research_enabled
+            else fetch_live_research(prompt) if research_enabled
+            else ""
+        )
+    elif market_update:
+        duration = max(35, min(75, explicit_duration if explicit_duration is not None else 50))
+        route_format = "vertical"
+        flags = f"--vertical --duration={duration}s"
+        research = fetch_market_research(prompt) if research_enabled else ""
     else:
-        duration = max(35, min(48, explicit_duration if explicit_duration is not None else 36))
+        duration = max(35, min(60, explicit_duration if explicit_duration is not None else 45))
         route_format = "vertical"
         flags = f"--vertical --duration={duration}s"
         research = ""
@@ -158,4 +263,5 @@ def route_production_request(
         duration_sec=duration,
         documentary=documentary,
         research_context=research,
+        market_update=market_update,
     )
