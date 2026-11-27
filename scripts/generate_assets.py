@@ -1334,11 +1334,6 @@ async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
 def main():
     offline_mode = os.environ.get("CINEMA_OFFLINE") == "1"
     trending_context = ""
-    if not offline_mode and re.search(r"(?<!\S)--trending(?!\S)", RAW_PROMPT, re.IGNORECASE):
-        try:
-            trending_context = fetch_trending_context()
-        except requests.RequestException as error:
-            print(f"Google Trends context unavailable; continuing without it: {error}")
 
     route = route_production_request(
         RAW_PROMPT,
@@ -1346,28 +1341,54 @@ def main():
         research_enabled=not offline_mode,
     )
     if route.research_context:
-        trending_context = "\n".join(
-            part for part in (trending_context, route.research_context) if part
-        )
+        trending_context = route.research_context
+    if not offline_mode and re.search(r"(?<!\S)--trending(?!\S)", RAW_PROMPT, re.IGNORECASE):
+        try:
+            extra_trends = fetch_trending_context()
+            trending_context = "\n".join(part for part in (trending_context, extra_trends) if part)
+        except requests.RequestException as error:
+            print(f"Google Trends context unavailable; continuing without it: {error}")
+
     intent = parse_prompt_intent(
         strip_viral_flags(route.prompt),
         route.format_hint,
     )
     orientation = intent.format
+    subject_text = intent.script_text if intent.input_mode == "script" else intent.prompt
+    topic_kind = classify_topic(subject_text)
+    is_hinglish = intent.voice.startswith(("hi-IN-", "en-IN-"))
+    creative_direction = build_creative_direction(
+        subject_text,
+        topic_kind=topic_kind,
+        input_mode=intent.input_mode,
+        production_style={
+            "market_update": "newsroom_editorial",
+            "commercial": "cinematic_commercial",
+            "explainer": "visual_explainer",
+            "travel": "documentary_travel",
+            "story": "character_led_story",
+            "technology": "technical_documentary",
+            "general": "subject_led_editorial",
+        }.get(topic_kind, "subject_led_editorial"),
+        seed=JOB_ID,
+        research_context=trending_context,
+    )
+
     viral_plan = build_viral_plan(
         route.prompt,
         intent.mode,
         intent.duration_sec,
         trending_context=trending_context,
     )
-    scene_count_instruction = "10 to 14" if viral_plan.fast_cuts else "8 to 14"
+    scene_count_instruction = f"exactly {viral_plan.scene_count}"
 
     sys_prompt = SYSTEM_PROMPT.format(
         target_words=intent.target_words,
-        min_narration_words=max(60, intent.min_narration_words),
+        min_narration_words=max(30, intent.min_narration_words),
         scene_count_instruction=scene_count_instruction,
         lang_instruction=intent.lang_instruction,
         style_instruction=viral_plan.system_instruction,
+        creative_direction=creative_direction,
         brand=intent.brand,
         color=intent.color,
         mode=intent.mode,
@@ -1383,30 +1404,49 @@ def main():
         prompt_context = "\n".join(
             part for part in (prompt_context, trending_context) if part
         )
+
+    latest_brief = intent.script_text if intent.input_mode == "script" else intent.prompt
     full_prompt = enhance_story_prompt(
-        compose_story_prompt(intent.prompt, prompt_context),
+        compose_story_prompt(latest_brief, prompt_context),
         viral_plan,
     )
+    full_prompt += (
+        "\n\nCURRENT PRODUCTION: " + JOB_ID
+        + "\nINPUT MODE: " + intent.input_mode
+        + "\nTOPIC CLASS: " + topic_kind
+        + "\nUse a fresh angle and distinct shots for this production."
+    )
+
     if offline_mode:
         storyboard = build_fallback_storyboard(
             full_prompt,
             intent.brand,
             intent.color,
             intent.mode,
-            intent.voice.startswith(("hi-IN-", "en-IN-")),
-            min_words=intent.min_narration_words,
+            is_hinglish,
+            min_words=1 if intent.input_mode == "script" else intent.min_narration_words,
         )
     else:
         storyboard = generate_storyboard(
             full_prompt,
             sys_prompt,
-            intent.min_narration_words,
+            1 if intent.input_mode == "script" else intent.min_narration_words,
             brand=intent.brand,
             color=intent.color,
             mode=intent.mode,
-            is_hinglish=intent.voice.startswith(("hi-IN-", "en-IN-")),
+            is_hinglish=is_hinglish,
+            variation_key=JOB_ID,
+            script_mode=intent.input_mode == "script",
         )
-    narration = sanitize_narration(storyboard["narration"])
+
+    # A user-supplied script is the canonical voiceover. The model only directs its visuals.
+    narration_source = (
+        intent.script_text if intent.input_mode == "script" else storyboard["narration"]
+    )
+    narration = sanitize_narration(narration_source)
+    scenes = diversify_scenes(storyboard.get("scenes", []))
+    if not scenes:
+        raise RuntimeError("Creative director returned no usable scenes.")
 
     if offline_mode:
         words, total_duration = synthesize_offline_voice_and_timings(
@@ -1420,34 +1460,56 @@ def main():
             "public/voiceover.mp3", words
         )
 
-    scenes = storyboard.get("scenes", [])
-    total_weight = sum(s["weight"] for s in scenes)
+        language_code = "hi" if is_hinglish else "en"
+        aligned_words = align_with_whisperx(
+            "public/voiceover.mp3",
+            narration,
+            language=language_code,
+        )
+        if aligned_words:
+            words = aligned_words
+
+    total_weight = sum(float(scene.get("weight", 1.0)) for scene in scenes)
     cursor = 0.0
     timed_scenes = []
+    video_scene_indexes = choose_video_scene_indexes(
+        scenes,
+        max_clips=max(0, min(8, int(os.environ.get("CINEMA_MAX_VIDEO_CLIPS", "3")))),
+    )
 
-    for idx, s in enumerate(scenes):
-        dur = (
+    for idx, scene in enumerate(scenes):
+        duration = (
             total_duration / len(scenes)
             if viral_plan.fast_cuts
-            else (s.get("weight", 1.0) / total_weight) * total_duration
+            else (float(scene.get("weight", 1.0)) / max(total_weight, 1e-6)) * total_duration
         )
-        s["startSec"] = round(cursor, 2)
-        cursor = total_duration if idx == len(scenes) - 1 else cursor + dur
-        s["endSec"] = round(cursor, 2)
+        scene["startSec"] = round(cursor, 2)
+        cursor = total_duration if idx == len(scenes) - 1 else cursor + duration
+        scene["endSec"] = round(cursor, 2)
 
-        q = s["visualQuery"]
+        query = str(scene.get("visualQuery", "")).strip()
         clip_path = f"public/media/scene_{idx}.mp4"
-        if (
+        generated_video = (
             not offline_mode
-            and idx in {0, 2}
-            and try_generate_ai_video_clip(q, idx, orientation, clip_path)
-        ):
+            and idx in video_scene_indexes
+            and scene.get("mediaMode") not in {"still", "graphic"}
+            and try_generate_ai_video_clip(query, idx, orientation, clip_path)
+        )
+        if generated_video:
             media_file, media_kind = f"media/scene_{idx}.mp4", "video"
         else:
-            media_file, media_kind = fetch_broll_or_ai_visual(q, idx, orientation)
-        s["mediaFile"] = media_file
-        s["mediaKind"] = media_kind
-        timed_scenes.append(s)
+            media_file, media_kind = fetch_broll_or_ai_visual(query, idx, orientation)
+
+        scene["mediaFile"] = media_file
+        scene["mediaKind"] = media_kind
+        scene["visualSeed"] = stable_visual_seed(JOB_ID, idx, query)
+        timed_scenes.append(scene)
+
+    # Visual audit is diagnostic: a weak asset is reported instead of being disguised as success.
+    visual_report = audit_visual_plan(timed_scenes, "public")
+    if visual_report.get("warnings"):
+        for warning in visual_report["warnings"]:
+            print(f"VISUAL QA WARNING: {warning}")
 
     synthesize_ambient_cinema_score(
         total_duration,
@@ -1469,12 +1531,20 @@ def main():
         timed_scenes,
         total_duration,
     )
+
     output = {
         "title": storyboard.get("title", "Cinema AI Video"),
         "brandTag": intent.brand,
         "themeColor": intent.color,
         "mode": intent.mode,
         "viralMode": viral_plan.archetype,
+        "topicKind": topic_kind,
+        "inputMode": intent.input_mode,
+        "jobId": JOB_ID,
+        "storyboardProvider": storyboard.get("storyboardProvider", "topic-aware-fallback"),
+        "degradedMode": bool(storyboard.get("degradedMode", False)),
+        "researchContext": trending_context,
+        "visualQuality": visual_report,
         "beatSync": viral_plan.beat_sync,
         "beatTimestamps": beat_timestamps,
         "format": intent.format,
@@ -1489,12 +1559,21 @@ def main():
         "sfxPopFile": "sfx_pop.mp3",
         "sfxFiles": SFX_VARIANTS,
     }
-    with open("public/video_data.json", "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2)
+    with open("public/video_data.json", "w", encoding="utf-8") as output_file:
+        json.dump(output, output_file, indent=2)
+
+    if os.environ.get("OTIO_EXPORT_ENABLED", "").casefold() in {"1", "true", "yes"}:
+        try:
+            if export_otio(output, "out/final.otio"):
+                print("Exported OpenTimelineIO edit timeline to out/final.otio.")
+        except Exception as error:
+            print(f"Optional OpenTimelineIO export unavailable: {error}")
 
     print(
         f"Mastered {total_duration:.2f}s {intent.mode} film | "
-        f"Scenes: {len(timed_scenes)} | Words: {len(words)}"
+        f"Topic: {topic_kind} | Input: {intent.input_mode} | "
+        f"Scenes: {len(timed_scenes)} | AI video attempts: {len(video_scene_indexes)} | "
+        f"Words: {len(words)} | Provider: {output['storyboardProvider']}"
     )
 
 if __name__ == "__main__":
