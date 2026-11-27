@@ -236,7 +236,7 @@ export const SceneDirector: React.FC<Props> = ({
     }}>
       <div style={{ width: '100%', maxWidth }}>
         {kicker && <Kicker color={themeColor}>{kicker} / {bars.length ? 'SOURCE DATA' : 'VISUAL ANALYSIS'}</Kicker>}
-        <Headline size={Math.max(34, Math.min(66, height * 0.044))}>{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(34, Math.min(66, height * 0.044))}>{title}</Headline>
         {sublineNode}
         {scene.statValue && <div style={{
           font: `900 ${Math.max(48, Math.min(86, height * 0.064))}px Montserrat, sans-serif`,
@@ -296,7 +296,7 @@ export const SceneDirector: React.FC<Props> = ({
         background: 'linear-gradient(145deg,rgba(3,7,13,0.9),rgba(3,7,13,0.56))',
       }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={Math.max(34, Math.min(68, height * 0.047))}>{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(34, Math.min(68, height * 0.047))}>{title}</Headline>
         <Subline size={smallSize}>{subline}</Subline>
         <BulletList items={scene.bullets} color={themeColor} />
       </div>
