@@ -17,12 +17,23 @@ def audit_visual_plan(scenes: list[dict[str, Any]], public_dir: str | Path = "pu
     duplicate_queries = sorted({query for query in queries if query and queries.count(query) > 1})
     if duplicate_queries:
         warnings.append(f"Repeated visual queries were found: {len(duplicate_queries)}")
-    files = [
-        str(scene.get("mediaFile", "")).strip()
-        for scene in scenes
-        if scene.get("mediaFile") and scene.get("mediaKind") in {"image", "video"}
-    ]
-    if scenes and len(files) / len(scenes) < 0.60:
+    files: list[str] = []
+    media_backed_scenes = 0
+    for scene in scenes:
+        if not isinstance(scene, dict) or scene.get("mediaKind") not in {"image", "video"}:
+            continue
+        scene_files: list[str] = []
+        primary = scene.get("mediaFile")
+        if isinstance(primary, str) and primary.strip():
+            scene_files.append(primary.strip())
+        sequence = scene.get("mediaFiles")
+        if isinstance(sequence, list):
+            scene_files.extend(item.strip() for item in sequence if isinstance(item, str) and item.strip())
+        scene_files = list(dict.fromkeys(scene_files))
+        if scene_files:
+            media_backed_scenes += 1
+            files.extend(scene_files)
+    if scenes and media_backed_scenes / len(scenes) < 0.60:
         warnings.append("Fewer than 60% of scenes have downloaded/generated media; some procedural fallbacks may appear.")
     treatments = [str(scene.get("visualTreatment", "")).strip() for scene in scenes]
     treatments = [treatment for treatment in treatments if treatment]
@@ -57,7 +68,7 @@ def audit_visual_plan(scenes: list[dict[str, Any]], public_dir: str | Path = "pu
     return {
         "passed": not errors,
         "scene_count": len(scenes),
-        "media_backed_scenes": len(files),
+        "media_backed_scenes": media_backed_scenes,
         "visual_treatments": unique_treatments,
         "visual_treatment_count": len(unique_treatments),
         "adjacent_treatment_repeats": adjacent_repeats,
