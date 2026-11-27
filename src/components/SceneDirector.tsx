@@ -9,7 +9,7 @@ type Props = {
   isLandscape?: boolean;
 };
 
-const Kicker: React.FC<{ children: string; color: string; muted?: boolean }> = ({
+const Kicker: React.FC<{ children: React.ReactNode; color: string; muted?: boolean }> = ({
   children, color, muted = false,
 }) => (
   <div style={{

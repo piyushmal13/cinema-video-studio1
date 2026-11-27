@@ -196,7 +196,7 @@ def stable_visual_seed(job_id: str, scene_index: int, query: str) -> int:
 
 
 def choose_video_scene_indexes(
-    scenes: list[dict[str, Any]], max_clips: int = 4
+    scenes: list[dict[str, Any]], max_clips: int = 5
 ) -> set[int]:
     """Spread generated-motion attempts across the narrative instead of hard-coding scenes 0 and 2."""
     if not scenes or max_clips <= 0:

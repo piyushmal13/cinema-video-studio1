@@ -503,19 +503,27 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
                 </AbsoluteFill>
               </TransitionSeries.Sequence>
               {index < scenes.length - 1 && (
-                <TransitionSeries.Transition
-                  presentation={
-                    scene.transitionStyle === 'push'
-                      ? slide({ direction: scene.textSide === 'right' ? 'from-left' : 'from-right' })
-                      : scene.transitionStyle === 'wipe' || scene.transitionStyle === 'flash'
-                        ? wipe({ direction: scene.transitionStyle === 'flash' ? 'from-bottom' : 'from-left' })
-                        : fade()
-                  }
-                  timing={springTiming({
-                    durationInFrames: transitionFrames,
-                    config: { damping: scene.transitionStyle === 'flash' ? 120 : 200 },
-                  })}
-                />
+                scene.transitionStyle === 'push' ? (
+                  <TransitionSeries.Transition
+                    presentation={slide({ direction: scene.textSide === 'right' ? 'from-left' : 'from-right' })}
+                    timing={springTiming({ durationInFrames: transitionFrames, config: { damping: 200 } })}
+                  />
+                ) : scene.transitionStyle === 'wipe' ? (
+                  <TransitionSeries.Transition
+                    presentation={wipe({ direction: 'from-left' })}
+                    timing={springTiming({ durationInFrames: transitionFrames, config: { damping: 200 } })}
+                  />
+                ) : scene.transitionStyle === 'flash' ? (
+                  <TransitionSeries.Transition
+                    presentation={wipe({ direction: 'from-bottom' })}
+                    timing={springTiming({ durationInFrames: transitionFrames, config: { damping: 120 } })}
+                  />
+                ) : (
+                  <TransitionSeries.Transition
+                    presentation={fade()}
+                    timing={springTiming({ durationInFrames: transitionFrames, config: { damping: 200 } })}
+                  />
+                )
               )}
             </React.Fragment>
           );

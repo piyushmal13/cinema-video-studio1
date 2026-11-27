@@ -1621,7 +1621,7 @@ def main():
     timed_scenes = []
     video_scene_indexes = choose_video_scene_indexes(
         scenes,
-        max_clips=max(0, min(8, int(os.environ.get("CINEMA_MAX_VIDEO_CLIPS", "3")))),
+        max_clips=max(0, min(8, int(os.environ.get("CINEMA_MAX_VIDEO_CLIPS", "5")))),
     )
 
     for idx, scene in enumerate(scenes):
