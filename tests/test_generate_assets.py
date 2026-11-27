@@ -665,10 +665,10 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertEqual(result["scenes"], valid_storyboard["scenes"])
         self.assertEqual(result["storyboardProvider"], "pollinations:openai")
         self.assertEqual(post.call_count, 2)
-        self.assertIn("at least 60 words", post.call_args_list[1].kwargs["json"]["messages"][1]["content"])
+        self.assertIn("at least 60 narration words", post.call_args_list[1].kwargs["json"]["messages"][1]["content"])
         sleep.assert_not_called()
 
-    def test_gemini_is_only_used_as_an_optional_fallback(self):
+    def test_gemini_falls_through_model_variants_when_free_tier_limited(self):
         scenes = [
             {
                 "type": "cinema_hero",
@@ -711,8 +711,8 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertEqual(
             [call.args[0] for call in post.call_args_list],
             [
-                "https://text.pollinations.ai/openai",
-                "https://text.pollinations.ai/openai",
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
                 "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
             ],
         )
