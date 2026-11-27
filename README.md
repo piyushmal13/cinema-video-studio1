@@ -141,3 +141,26 @@ See [docs/REFERENCE_DRIVEN_EDITING_AND_ORCHESTRATION.md](docs/REFERENCE_DRIVEN_E
 You can now send a reference photo or video to the Telegram bot with a caption describing the new reel. A photo is fitted and inserted into the most relevant scene; a reference video is analyzed for aspect ratio and shot rhythm and guides the new edit without copying its footage or audio. Supported formats: JPG, PNG, WEBP, MP4 and MOV, up to 20 MB per attachment. The reference download is private to the ephemeral GitHub Actions runner and is not stored in a public bucket.
 
 The bot requires the existing `TELEGRAM_BOT_TOKEN` GitHub secret. Semantic image understanding uses the existing `GEMINI_API_KEY` when available (model override: `CINEMA_REFERENCE_VISION_MODEL` or `GEMINI_MODEL`); this sends a resized reference image to Google's API and consumes its quota. If no Gemini key is supplied, configure a private Ollama vision endpoint with `CINEMA_VISION_MODEL`. Without either vision provider, the pipeline uses metadata and a conservative crop heuristic. This is not yet multi-image album ingestion, and the system should still be reviewed for clipped logos/text before commercial delivery.
+
+
+## IFXTrades explainer production profile
+
+The Telegram production workflow now enables the IFXTrades brand profile by default:
+- Obsidian/navy backgrounds, white primary type and restrained IFX gold accents.
+- Brand tag positioned in a dedicated top safe area rather than a full-width banner.
+- Captions moved into a reserved bottom safe area, with fewer words per beat and a compact dark backing.
+- Short scene transitions to reduce cross-scene title collisions.
+- Responsive headline fitting and cleaner system-map layouts.
+- The opening scene now receives its own transition sound cue; voice remains foregrounded by side-chain ducking.
+
+An explicit request to omit IFXTrades branding still takes precedence over the workflow default.
+
+## Render quality gate
+
+Before Telegram delivery, the workflow now runs \`scripts/render_quality_gate.py\`:
+- ffprobe checks for valid video/audio streams and a plausible duration.
+- FFmpeg reports long black/frozen intervals for review.
+- The storyboard audit records missing/repeated media and repetitive visual treatments.
+- Tesseract samples the rendered MP4 and fails the job if OCR detects materially overlapping text boxes.
+
+OCR is a practical automated screen, not a substitute for a human creative review. The report is saved as \`out/render_quality_report.json\` with the production telemetry artifact.
