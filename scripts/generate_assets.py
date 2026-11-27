@@ -1636,6 +1636,16 @@ def main():
         if aligned_words:
             words = aligned_words
 
+    if intent.brand == "IFXTRADES" and trending_context:
+        source_domains = sorted({
+            match.group(1).lower()
+            for match in re.finditer(r"https?://(?:www\.)?([^/\s)]+)", trending_context)
+        })
+        if source_domains:
+            source_note = "RESEARCH LEADS · " + " · ".join(source_domains[:3])
+            for scene in scenes:
+                scene["sourceNote"] = source_note
+
     total_weight = sum(float(scene.get("weight", 1.0)) for scene in scenes)
     cursor = 0.0
     timed_scenes = []

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -174,13 +175,15 @@ def fetch_live_research(prompt: str, timeout: float = 6.0) -> str:
             r"<!\s*(?:DOCTYPE|ENTITY)", response.text, re.I
         ):
             root = ET.fromstring(response.text)
-            titles = [
-                re.sub(r"\s+", " ", "".join(item.itertext())).strip()
-                for item in root.findall(".//item/title")[:5]
-            ]
-            titles = [title[:180] for title in titles if title]
-            if titles:
-                sources.append("Google News RSS leads: " + "; ".join(titles))
+            items = root.findall(".//item")[:5]
+            for item in items:
+                title = re.sub(r"\s+", " ", (item.findtext("title") or "")).strip()
+                source = re.sub(r"\s+", " ", (item.findtext("source") or "Google News RSS")).strip()
+                link = (item.findtext("link") or "").strip()
+                published = re.sub(r"\s+", " ", (item.findtext("pubDate") or "")).strip()
+                if title:
+                    metadata = "; ".join(part for part in (source, published, link) if part)
+                    sources.append(f"Research lead: {title[:180]} ({metadata[:240]})")
     except (requests.RequestException, ET.ParseError, ValueError) as error:
         print(f"Google News research unavailable: {error}")
 
@@ -199,8 +202,10 @@ def fetch_live_research(prompt: str, timeout: float = 6.0) -> str:
         response.raise_for_status()
         answer = response.json()
         summary = answer.get("AbstractText") or answer.get("Answer") or ""
+        abstract_url = answer.get("AbstractURL") or ""
         if isinstance(summary, str) and summary.strip():
-            sources.append("DuckDuckGo context: " + re.sub(r"\s+", " ", summary)[:700])
+            sources.append("Search context: " + re.sub(r"\s+", " ", summary)[:650]
+                           + (f" ({abstract_url})" if abstract_url else ""))
         for topic in answer.get("RelatedTopics", [])[:4]:
             if isinstance(topic, dict) and isinstance(topic.get("Text"), str):
                 sources.append("Search lead: " + topic["Text"][:180])
@@ -246,7 +251,11 @@ def route_production_request(
         duration = max(35, min(60, explicit_duration if explicit_duration is not None else 45))
         route_format = "vertical"
         flags = f"--vertical --duration={duration}s"
-        research = ""
+        research = (
+            fetch_live_research(prompt)
+            if research_enabled and os.environ.get("CINEMA_RESEARCH_ALL_IFX", "").casefold() in {"1", "true", "yes"}
+            else ""
+        )
 
     routed_prompt = re.sub(r"--minutes\s*=\s*\d+(?:\.\d+)?", " ", prompt, flags=re.I)
     routed_prompt = re.sub(

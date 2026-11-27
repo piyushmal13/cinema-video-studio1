@@ -47,6 +47,7 @@ export interface SceneItem {
   cameraMotion?: CameraMotion;
   sfxCue?: 'boom' | 'whoosh' | 'riser' | 'pulse';
   accentColor?: string;
+  sourceNote?: string;
 }
 
 export interface WordTiming {
