@@ -89,7 +89,7 @@ Return ONLY one valid JSON object:
 - scenes: {scene_count_instruction} scenes, each with type, weight, kicker, headline, visualQuery (4–7 words), cameraMotion and sfxCue.
 - Optional: subline, statValue, bullets (up to 4), leftLabel, rightLabel, barValues (source-backed only), mediaMode ("video", "image", or "graphic").
 
-Available scene types: cinema_hero, three_d_globe, three_d_bars, candlestick_chart, split_compare, step_list, cinema_outro, kinetic_type, process_diagram, editorial_montage, data_viz, data_viz.
+Available scene types: cinema_hero, three_d_globe, three_d_bars, candlestick_chart, split_compare, step_list, cinema_outro, kinetic_type, process_diagram, editorial_montage, data_viz.
 Use a different purposeful visual subject and shot family for every scene. Consecutive scenes must not repeat the same visual query, composition or treatment.
 cameraMotion: zoom_in, zoom_out, pan_left, pan_right, dolly_push.
 sfxCue: boom, whoosh, riser, pulse.
