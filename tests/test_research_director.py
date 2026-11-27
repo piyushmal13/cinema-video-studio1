@@ -83,5 +83,32 @@ class ResearchDirectorTests(unittest.TestCase):
         self.assertEqual(get.call_count, 2)
 
 
+    def test_daily_market_update_routes_to_vertical_and_fetches_quotes_and_news(self):
+        from scripts.research_director import is_market_update_request
+
+        self.assertTrue(is_market_update_request("Aaj pura gold market overview banao"))
+        self.assertFalse(is_market_update_request("Explain how gold futures contracts work"))
+
+        with (
+            patch("scripts.research_director.fetch_market_research", return_value="timestamped quote + news") as research,
+        ):
+            route = route_production_request("Aaj pura market ka overview nikal kar reel banao")
+
+        self.assertTrue(route.market_update)
+        self.assertFalse(route.documentary)
+        self.assertEqual(route.format_hint, "vertical")
+        self.assertIn("--duration=50s", route.prompt)
+        self.assertIn("timestamped quote", route.research_context)
+        research.assert_called_once()
+
+    def test_verbose_instruction_does_not_automatically_become_documentary(self):
+        route = route_production_request(
+            "Create a detailed vertical video explaining how solar panels work, "
+            "include the physics, costs, home installation examples, common myths, "
+            "and practical advice for beginners."
+        )
+        self.assertFalse(route.documentary)
+        self.assertEqual(route.format_hint, "vertical")
+
 if __name__ == "__main__":
     unittest.main()
