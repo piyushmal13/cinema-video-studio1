@@ -1252,10 +1252,9 @@ def mix_final_audio(
     ]
     audio_labels = ["[voice]", "[ducked]"]
     for scene_index, scene in enumerate(scenes):
-        if scene.get("startSec", 0) <= 0:
-            continue
         filename = _sfx_variant_filename(scene, scene_index)
-        delay_ms = max(0, round(float(scene["startSec"]) * 1000))
+        # Give the opening cue a short breathing gap; later cues align to scene starts.
+        delay_ms = max(350 if scene_index == 0 else 0, round(float(scene.get("startSec", 0)) * 1000))
         input_index = len(audio_labels)
         inputs.extend(["-i", os.path.join(asset_dir, filename)])
         label = f"sfx{input_index}"
