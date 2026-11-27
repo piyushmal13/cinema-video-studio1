@@ -53,7 +53,7 @@ Given a user topic, story idea, or full script, craft a complete {target_words} 
 {style_instruction}
 Use brandTag "{brand}", themeColor "{color}", and mode "{mode}".
 
-Treat the user's brief as the source of truth. For a topic, create a clear beginning, explanation with useful context, concrete example, and satisfying ending. For a supplied script, preserve its key facts and intended meaning; do not replace it with a generic summary. Explain technical ideas in plain language, avoid filler, and do not invent statistics, quotations, or claims. Keep the narration complete enough for the requested runtime. Do not speak production settings or visual directions in the voiceover.
+Treat the user's brief as the source of truth. For a topic, create a clear beginning, explanation with useful context, concrete example, and satisfying ending. For a supplied script, preserve its key facts and intended meaning; do not replace it with a generic summary. Explain technical ideas in plain language, avoid filler, and do not invent statistics, quotations, or claims. Keep the narration complete enough for the requested runtime. Do not speak production settings or visual directions in the voiceover. Never insert a company name, brand name, logo, product promotion, call to action, or watermark unless the user explicitly requests it or names that brand in the current request.
 The narration MUST contain at least {min_narration_words} whitespace-separated words. This is a hard minimum, not a suggestion.
 
 Return ONLY one valid JSON object with these top-level keys:
