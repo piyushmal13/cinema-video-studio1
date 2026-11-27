@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from scripts.reference_analyzer import reference_prompt_context
+from reference_analyzer import reference_prompt_context
 
 
 def main() -> int:
