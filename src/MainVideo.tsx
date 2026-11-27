@@ -518,27 +518,29 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
         })}
       </TransitionSeries>
 
-      <div
-        style={{
-          position: 'absolute',
-          top: videoData.isLandscape ? '5%' : '14%',
-          left: 0,
-          right: 0,
-          fontFamily: 'monospace',
-          fontSize: 18,
-          fontWeight: 800,
-          letterSpacing: '0.16em',
-          color: themeColor,
-          backgroundColor: 'rgba(5, 8, 15, 0.72)',
-          padding: '6px 14px',
-          borderRadius: '8px',
-          border: `1px solid ${themeColor}44`,
-          zIndex: 40,
-          textAlign: 'center',
-        }}
-      >
-        {videoData.brandTag || 'IFXTRADES'}
-      </div>
+      {videoData.brandTag && (
+        <div
+          style={{
+            position: 'absolute',
+            top: videoData.isLandscape ? '5%' : '14%',
+            left: 0,
+            right: 0,
+            fontFamily: 'monospace',
+            fontSize: 18,
+            fontWeight: 800,
+            letterSpacing: '0.16em',
+            color: themeColor,
+            backgroundColor: 'rgba(5, 8, 15, 0.72)',
+            padding: '6px 14px',
+            borderRadius: '8px',
+            border: `1px solid ${themeColor}44`,
+            zIndex: 40,
+            textAlign: 'center',
+          }}
+        >
+          {videoData.brandTag}
+        </div>
+      )}
 
       <SubtitleOverlay words={videoData.words || []} themeColor={themeColor} />
     </AbsoluteFill>
