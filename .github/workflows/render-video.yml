@@ -38,6 +38,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Inspect available compute without downloading models
+        run: python scripts/hardware_doctor.py --output out/hardware_report.json
+
       - name: Install Remotion Engine and Python Audio Tools
         run: |
           npm ci
@@ -49,6 +52,9 @@ jobs:
 
       - name: Prepare compact audio vault
         run: python scripts/setup_real_audio.py
+
+      - name: Record production start time
+        run: echo "CINEMA_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Direct Film, Fetch AI Cinema Visuals, Synthesize Voice & Score
         env:
@@ -74,6 +80,21 @@ jobs:
 
       - name: Generate cover and social publishing package
         run: python scripts/post_production.py --video out/final.mp4 --data public/video_data.json --output-dir out
+
+      - name: Record measured production telemetry
+        if: always()
+        run: python scripts/cost_ledger.py --output out/final.mp4 --video-data public/video_data.json --hardware-report out/hardware_report.json --ledger out/production_ledger.jsonl
+
+      - name: Preserve lightweight production telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cinema-production-telemetry-${{ github.run_id }}
+          path: |
+            out/hardware_report.json
+            out/production_ledger.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Deliver Film and Generated Caption to Telegram Phone Chat
         env:

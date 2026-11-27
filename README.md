@@ -101,3 +101,13 @@ Run npm ci, install requirements.txt, then run:
 - npx tsc --noEmit
 
 Video generation runs scripts/setup_real_audio.py and scripts/generate_assets.py before npm run build (or npm run build:landscape). GitHub Actions installs FFmpeg when missing. Run scripts/autonomous_qa_agent.py for unit tests, an isolated offline pipeline run, audio decoding checks and a short Remotion render.
+
+
+## Free-first production intelligence
+
+Read [docs/FREE_FIRST_PRODUCTION_MACHINE.md](docs/FREE_FIRST_PRODUCTION_MACHINE.md) for the architecture audit, compute limits, candidate repositories, licence gates and phased roadmap.
+
+Optional tools:
+- python scripts/hardware_doctor.py — read-only CPU/RAM/GPU/FFmpeg capability report; no model downloads or driver changes.
+- python scripts/repo_scout.py --limit 30 — ranks GitHub repositories by licence signal, stars, recency and archive status. It never clones or executes results. Set GITHUB_TOKEN for higher API limits.
+- python scripts/cost_ledger.py --output out/final.mp4 --video-data public/video_data.json — records measured duration, file sizes, providers and degraded-mode state. Unknown cash costs stay null, not zero.
