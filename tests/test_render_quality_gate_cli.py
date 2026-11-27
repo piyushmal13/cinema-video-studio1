@@ -18,7 +18,7 @@ class RenderQualityGateCliTests(unittest.TestCase):
             timeout=15,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.count("--video-data"), 1)
+        self.assertEqual(result.stdout.count("  --video-data VIDEO_DATA"), 1)
 
     def test_critical_storyboard_warning_is_not_overwritten_or_ignored(self):
         with tempfile.TemporaryDirectory() as directory:
