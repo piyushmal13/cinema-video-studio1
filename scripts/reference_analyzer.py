@@ -115,6 +115,57 @@ def _image_metadata(path: str | Path) -> dict[str, Any]:
         return {"path": str(path), "available": False, "reason": "Pillow is unavailable or image could not be decoded"}
 
 
+
+def _gemini_image_description(path: str | Path) -> dict[str, Any] | None:
+    """Use the already-configured Gemini API key for bounded multimodal reference analysis."""
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key or requests is None:
+        return None
+    model = os.environ.get("CINEMA_REFERENCE_VISION_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    try:
+        from PIL import Image
+        from io import BytesIO
+        with Image.open(path) as source:
+            image = source.convert("RGB")
+            image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+            buffer = BytesIO()
+            image.save(buffer, format="JPEG", quality=82, optimize=True)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    except (ImportError, OSError, ValueError):
+        encoded = base64.b64encode(Path(path).read_bytes()).decode("ascii")
+    prompt = (
+        "Act as a professional visual editor analyzing a user-provided reference image. "
+        "Return JSON only with subject, visible_objects, action, environment, composition, "
+        "focal_point (normalized x and y numbers from 0 to 1), dominant_colors, visible_text, "
+        "crop_warnings, and editing_notes. Identify important logos, product labels, faces, "
+        "and text that must not be clipped. Do not infer identity or invent unseen details."
+    )
+    try:
+        response = requests.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            json={
+                "contents": [{"role": "user", "parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": "image/jpeg", "data": encoded}},
+                ]}],
+                "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 900},
+            },
+            timeout=(10, 75),
+        )
+    except requests.RequestException:
+        return None
+    if response.status_code != 200:
+        return {"status": "unavailable", "reason": f"Gemini vision returned HTTP {response.status_code}"}
+    try:
+        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        fence = chr(96) * 3
+        cleaned = str(raw).strip().removeprefix(fence + "json").removeprefix(fence).removesuffix(fence).strip()
+        return json.loads(cleaned)
+    except (ValueError, KeyError, IndexError, TypeError):
+        return {"status": "unavailable", "reason": "Gemini vision did not return the required JSON shape"}
+
+
 def _ollama_image_description(path: str | Path) -> dict[str, Any] | None:
     """Optional local vision model. No image leaves the machine unless the user configured a remote URL."""
     endpoint = os.environ.get("CINEMA_VISION_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -232,11 +283,13 @@ def build_style_brief(video_path: str | Path | None, image_paths: list[str], out
             duration = float(metadata.get("duration_sec") or 0)
             intervals = [b - a for a, b in zip([0.0, *cuts], [*cuts, duration]) if b > a]
             report["average_shot_length_sec"] = round(sum(intervals) / len(intervals), 3) if intervals else None
-            report["contact_sheet_frames"] = extract_video_contact_sheet(video_path, output_dir)
+            report["contact_sheet_frames"] = extract_video_contact_sheet(video_path, output_dir, count=4)
     contact_frames = list(report.get("contact_sheet_frames") or [])
     for path in [*image_paths, *contact_frames]:
         metadata = _image_metadata(path)
-        description = _ollama_image_description(path)
+        description = _gemini_image_description(path)
+        if not description or description.get("status") == "unavailable":
+            description = _ollama_image_description(path)
         if description:
             metadata["vision_description"] = description
         metadata["reference_role"] = "uploaded_image" if path in image_paths else "video_contact_sheet_frame"

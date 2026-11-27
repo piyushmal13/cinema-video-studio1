@@ -57,6 +57,9 @@ jobs:
         if: github.event.client_payload.reference_file_id != ''
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          CINEMA_REFERENCE_VISION_MODEL: ${{ vars.CINEMA_REFERENCE_VISION_MODEL }}
           REFERENCE_FILE_ID: ${{ github.event.client_payload.reference_file_id }}
           REFERENCE_KIND: ${{ github.event.client_payload.reference_kind }}
           REFERENCE_MIME_TYPE: ${{ github.event.client_payload.reference_mime_type }}

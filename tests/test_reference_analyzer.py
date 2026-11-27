@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from scripts.reference_analyzer import (
@@ -8,6 +9,7 @@ from scripts.reference_analyzer import (
     probe_video,
     smart_crop_image,
     prepare_reference_images,
+    _gemini_image_description,
 )
 
 
@@ -63,6 +65,26 @@ class ReferenceAnalyzerTests(unittest.TestCase):
             assigned = prepare_reference_images(scenes, manifest, "vertical", root / "public")
             self.assertEqual(assigned, {0: "media/user_reference_01.jpg"})
             self.assertTrue((root / "public" / "media" / "user_reference_01.jpg").is_file())
+
+
+    def test_gemini_vision_uses_configured_key_and_returns_structured_description(self):
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                from PIL import Image
+            except ImportError:
+                self.skipTest("Pillow optional dependency is not installed")
+            image = Path(directory) / "reference.png"
+            Image.new("RGB", (64, 64), (120, 80, 40)).save(image)
+            class FakeResponse:
+                status_code = 200
+                def json(self):
+                    return {"candidates": [{"content": {"parts": [{"text": '{"subject":"red shoe","focal_point":{"x":0.6,"y":0.4}}'}]}}]}
+            with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key", "GEMINI_MODEL": "test-vision-model"}):
+                with patch("scripts.reference_analyzer.requests.post", return_value=FakeResponse()) as mocked:
+                    result = _gemini_image_description(image)
+            self.assertEqual(result["subject"], "red shoe")
+            self.assertEqual(result["focal_point"], {"x": 0.6, "y": 0.4})
+            self.assertIn("test-vision-model:generateContent", mocked.call_args.args[0])
 
 
 if __name__ == "__main__":
