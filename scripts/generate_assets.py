@@ -1463,7 +1463,7 @@ def main():
     orientation = intent.format
     subject_text = intent.script_text if intent.input_mode == "script" else intent.prompt
     topic_kind = classify_topic(subject_text)
-    is_hinglish = intent.voice.startswith(("hi-IN-", "en-IN-"))
+    is_hinglish = intent.voice.startswith("hi-IN-")
     creative_direction = build_creative_direction(
         subject_text,
         topic_kind=topic_kind,
