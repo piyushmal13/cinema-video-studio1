@@ -400,8 +400,8 @@ class GenerateAssetsTests(unittest.TestCase):
                 generated = generate_assets.try_generate_ai_video_clip(
                     "A meaningful visual for a middle scene", 4, "landscape", output_path
                 )
+                self.assertTrue(os.path.isfile(output_path))
         self.assertTrue(generated)
-        self.assertTrue(os.path.isfile(output_path))
         self.assertIn("width=832&height=480", get.call_args.args[0])
 
     def test_video_generation_uses_zero_gpu_after_pollinations_fails(self):
