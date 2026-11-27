@@ -49,6 +49,9 @@ jobs:
           npm ci
           pip install -r requirements.txt
           if ! command -v ffmpeg >/dev/null || ! command -v tesseract >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg tesseract-ocr; fi
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core fonts-lato fonts-liberation2 fonts-noto-core fonts-noto-color-emoji
+          fc-cache -f
 
       - name: Verify media and audio tools
         run: python -c "import auto_editor, gradio_client, gtts, librosa, mutagen, soundfile; print('media and audio dependencies ready')"
