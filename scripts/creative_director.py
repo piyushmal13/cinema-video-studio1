@@ -59,7 +59,9 @@ def detect_supplied_script(text: str) -> tuple[str, str]:
     match = _MARKER.search(text)
     if match:
         source = text[match.end():].strip()
-        source = re.sub(r"(?is)^\s*(?:end\s+script|/endscript)\s*$", "", source).strip()
+        end_marker = re.search(r"(?im)^\s*(?:end\s+script|/endscript)\s*$", source)
+        if end_marker:
+            source = source[:end_marker.start()].strip()
         if source:
             return "script", source
 
@@ -78,8 +80,8 @@ def detect_supplied_script(text: str) -> tuple[str, str]:
 def classify_topic(text: str) -> str:
     lower = text.casefold()
     if _MARKET_TERMS.search(lower) and re.search(
-        r"\b(?:today|aaj|latest|update|overview|market|price|outlook|session|"
-        r"news|calendar|what happened|what is moving)\b",
+        r"\b(?:today|aaj|latest|update|overview|outlook|session|"
+        r"news|calendar|what happened|what is moving|daily)\b",
         lower,
     ):
         return "market_update"
