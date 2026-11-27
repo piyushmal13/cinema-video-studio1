@@ -127,6 +127,9 @@ jobs:
         with:
           name: cinema-production-telemetry-${{ github.run_id }}
           path: |
+            out/final.mp4
+            out/telegram_caption.txt
+            out/cover.jpg
             out/hardware_report.json
             out/model_admission.json
             out/production_ledger.jsonl
