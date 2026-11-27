@@ -208,6 +208,10 @@ def validate_storyboard(
         "split_compare",
         "step_list",
         "cinema_outro",
+        "kinetic_type",
+        "process_diagram",
+        "editorial_montage",
+        "data_viz",
     }
     valid_motions = {"zoom_in", "zoom_out", "pan_left", "pan_right", "dolly_push"}
     valid_cues = {"boom", "whoosh", "riser", "pulse"}
