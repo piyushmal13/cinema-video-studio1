@@ -86,7 +86,6 @@ def main() -> int:
     parser.add_argument("--video", default="out/final.mp4")
     parser.add_argument("--report", default="out/render_quality_report.json")
     parser.add_argument("--video-data", default="public/video_data.json")
-    parser.add_argument("--video-data", default="public/video_data.json")
     parser.add_argument("--ocr", action="store_true", help="Require OCR-based text-overlap inspection.")
     args = parser.parse_args()
 
@@ -105,11 +104,6 @@ def main() -> int:
             if any(marker in warning for marker in critical_markers)
         ]
         report["plan"] = {**plan, "critical_warnings": critical, "passed": bool(plan.get("passed")) and not critical}
-    except (OSError, ValueError, TypeError) as error:
-        report["plan"] = {"passed": False, "errors": [f"Could not inspect storyboard data: {error}"]}
-    try:
-        video_data = json.loads(Path(args.video_data).read_text(encoding="utf-8"))
-        report["plan"] = audit_visual_plan(video_data.get("scenes", []), "public")
     except (OSError, ValueError, TypeError) as error:
         report["plan"] = {"passed": False, "errors": [f"Could not inspect storyboard data: {error}"]}
     if args.ocr:
