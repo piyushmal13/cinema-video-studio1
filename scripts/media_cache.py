@@ -8,7 +8,7 @@ import unicodedata
 from pathlib import Path
 
 
-_MEDIA_CACHE_VERSION = "v2" ("job-scoped variants prevent cross-video visual repetition")
+_MEDIA_CACHE_VERSION = "v2"  # Job-scoped variants prevent cross-video visual repetition.
 _MAX_CACHE_BYTES = 512 * 1024 * 1024
 _MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 _EXTENSIONS = {
