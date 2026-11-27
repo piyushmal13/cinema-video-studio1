@@ -130,7 +130,8 @@ def _ollama_image_description(path: str | Path) -> dict[str, Any] | None:
                 "prompt": (
                     "Describe this image for a professional video editor. Return concise JSON with "
                     "subject, visible_objects, action, environment, composition, focal_point, "
-                    "dominant_colors, visible_text, crop_warnings. Do not invent unseen details."
+                    "dominant_colors, visible_text, crop_warnings, and focal_point as normalized x/y numbers from 0 to 1. "
+                    "Do not invent unseen details."
                 ),
                 "images": [encoded], "stream": False, "format": "json",
             },
@@ -314,7 +315,7 @@ def prepare_reference_images(
         return {}
     width, height = (1080, 1920) if orientation == "vertical" else (1920, 1080)
     target = Path(public_dir) / "media" / "user_reference_01.jpg"
-    crop = smart_crop_image(source, target, width, height)
+    crop = smart_crop_image(source, target, width, height, focal_x, focal_y)
     if not crop.get("ok"):
         return {}
     # Prefer a scene whose shot description overlaps the vision model's subject terms.
@@ -326,6 +327,23 @@ def prepare_reference_images(
         subject_text = " ".join(
             str(vision.get(key, "")) for key in ("subject", "visible_objects", "action")
         )
+        focal = vision.get("focal_point")
+        if isinstance(focal, dict):
+            try:
+                focal_x, focal_y = float(focal.get("x")), float(focal.get("y"))
+                if not (0 <= focal_x <= 1 and 0 <= focal_y <= 1):
+                    focal_x = focal_y = None
+            except (TypeError, ValueError):
+                focal_x = focal_y = None
+        elif isinstance(focal, (list, tuple)) and len(focal) >= 2:
+            try:
+                focal_x, focal_y = float(focal[0]), float(focal[1])
+                if not (0 <= focal_x <= 1 and 0 <= focal_y <= 1):
+                    focal_x = focal_y = None
+            except (TypeError, ValueError):
+                focal_x = focal_y = None
+        else:
+            focal_x = focal_y = None
     except (OSError, ValueError, AttributeError):
         subject_text = ""
     tokens = {
