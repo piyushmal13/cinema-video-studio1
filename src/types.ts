@@ -5,7 +5,11 @@ export type SceneType =
   | 'candlestick_chart'
   | 'split_compare'
   | 'step_list'
-  | 'cinema_outro';
+  | 'cinema_outro'
+  | 'kinetic_type'
+  | 'process_diagram'
+  | 'editorial_montage'
+  | 'data_viz';
 
 export type CameraMotion = 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'dolly_push';
 
@@ -41,7 +45,7 @@ export interface VideoProps extends Record<string, unknown> {
   themeColor: string;
   mode: 'cinema' | 'shorts';
   format?: 'vertical' | 'landscape';
-  viralMode?: 'phonk' | 'meme' | 'cinema';
+  viralMode?: 'phonk' | 'meme' | 'cinema' | 'newsroom' | 'commercial' | 'explainer' | 'travel' | 'story' | 'technology' | 'editorial';
   beatSync?: boolean;
   beatTimestamps?: number[];
   totalDurationSec: number;
