@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
@@ -21,6 +22,7 @@ def _send_public_host_link(
     bot_token: str,
     chat_id: str,
     post: Callable,
+    caption: str = "",
 ) -> None:
     if video_path.stat().st_size > PUBLIC_HOST_LIMIT_BYTES:
         raise RuntimeError(
@@ -64,9 +66,8 @@ def _send_public_host_link(
 
     telegram_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     message = (
-        "Telegram could not accept this large video. Download it here within "
-        f"48 hours: {link}"
-    )
+        (caption.strip() + "\n\n") if caption.strip() else ""
+    ) + "Telegram could not accept this large video. Download it here within " + f"48 hours: {link}"
     try:
         message_response = post(
             telegram_url,
@@ -100,6 +101,8 @@ def deliver_video(
     chat_id: str,
     *,
     post: Callable = requests.post,
+    caption: str = "Your finished cinema film is ready.",
+    thumbnail_path: str | Path | None = None,
 ) -> None:
     source = Path(video_path)
     if not bot_token or not chat_id:
@@ -108,19 +111,26 @@ def deliver_video(
         raise FileNotFoundError(f"Rendered video is missing or empty: {source}")
 
     if source.stat().st_size > UPLOAD_TARGET_BYTES:
-        _send_public_host_link(source, bot_token, chat_id, post)
+        _send_public_host_link(source, bot_token, chat_id, post, caption)
         return
 
     url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
-    with source.open("rb") as video_file:
+    files: dict[str, tuple] = {}
+    with ExitStack() as stack:
+        video_file = stack.enter_context(source.open("rb"))
+        files["video"] = (source.name, video_file, "video/mp4")
+        thumb = Path(thumbnail_path) if thumbnail_path else None
+        if thumb and thumb.is_file() and 0 < thumb.stat().st_size <= 200_000:
+            thumbnail_file = stack.enter_context(thumb.open("rb"))
+            files["thumbnail"] = (thumb.name, thumbnail_file, "image/jpeg")
         response = post(
             url,
             data={
                 "chat_id": chat_id,
-                "caption": "Your finished cinema film is ready.",
+                "caption": caption[:1024],
                 "supports_streaming": "true",
             },
-            files={"video": (source.name, video_file, "video/mp4")},
+            files=files,
             timeout=(15, 300),
         )
 
@@ -160,11 +170,21 @@ def main() -> None:
         )
     )
     parser.add_argument("--video", default="out/final.mp4")
+    parser.add_argument("--caption-file", default="")
+    parser.add_argument("--thumbnail", default="out/cover.jpg")
     args = parser.parse_args()
+    caption = "Your finished cinema film is ready."
+    if args.caption_file:
+        caption_path = Path(args.caption_file)
+        if caption_path.is_file():
+            caption = caption_path.read_text(encoding="utf-8").strip() or caption
+    thumbnail = Path(args.thumbnail)
     deliver_video(
         args.video,
         os.environ.get("BOT_TOKEN", ""),
         os.environ.get("CHAT_ID", ""),
+        caption=caption,
+        thumbnail_path=thumbnail if thumbnail.is_file() else None,
     )
 
 
