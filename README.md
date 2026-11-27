@@ -28,6 +28,18 @@ The generator coordinates the creative director, research director, scene timing
 - Added scene families include editorial montage, kinetic typography, process diagrams and data-viz. 3D bar visuals only render when real barValues are supplied; the renderer no longer invents chart numbers.
 - IFXTrades branding is opt-in. It is applied only when the current request names IFXTrades / IndiaFXTrades or supplies an explicit brand option.
 
+## Visual storytelling and editorial grammar
+
+The visual director and Remotion renderer are now separate systems. The storyboard controls the subject, action and narrative beat; the visual director assigns a scene-specific composition, camera grammar, caption treatment and transition. It prevents a topic-aware script from being flattened into one centred title card.
+
+- Fifteen distinct composition systems are available: full-bleed hero, documentary lower-third, asymmetric editorial split, magazine cover, kinetic type, vertical timeline, process blueprint, comparative split, source-data stage, market chart, orbital stage, cinema end frame, immersive photo, photo essay and side-caption.
+- The treatment is selected with scene meaning in mind, then adjusted across the sequence to avoid repeating the previous two compositions. Camera movement now includes tilts, diagonal drift, handheld and intentional static holds as well as push/pan/zoom.
+- Each image scene can use a ComfyUI batch of up to three stills by default. The renderer crossfades through the returned photo set during that scene. Configure COMFYUI_IMAGE_WORKFLOW to return multiple images and set CINEMA_COMFY_IMAGES_PER_SCENE (1–5) to control the batch size. Providers that return one still continue to work unchanged.
+- Documentary and photo-essay scenes use lighter image grading and restrained lower-thirds; data, blueprint and comparison scenes use their own information layouts. Subtitles adapt between minimal, documentary, karaoke and newsroom ticker treatments.
+- The visual QA report now counts unique composition systems and flags repeated neighbouring layouts as well as duplicate media. A quality report is diagnostic and cannot certify that a stock or generated image is semantically perfect.
+
+The default GitHub runner still uses best-effort public media and the existing AI providers. A configured ComfyUI image workflow can create a larger coherent photo batch on a GPU host; the repository does not silently download large checkpoints or assume GPU hardware.
+
 ## Market research and source discipline
 
 Current market requests use a separate route from general explainers. The public data pass requests indicative Yahoo Finance quotes for GC=F gold futures, the US Dollar Index, US 10-year Treasury yield, NIFTY 50 and NASDAQ Composite, then adds bounded Google News RSS / DuckDuckGo context. Quote timestamps and available sources are carried into the production context.

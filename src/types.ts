@@ -11,7 +11,16 @@ export type SceneType =
   | 'editorial_montage'
   | 'data_viz';
 
-export type CameraMotion = 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'dolly_push';
+export type CameraMotion =
+  | 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'dolly_push'
+  | 'tilt_up' | 'tilt_down' | 'drift_diagonal' | 'handheld' | 'static';
+
+export type VisualTreatment =
+  | 'hero_full_bleed' | 'documentary_lower_third' | 'editorial_split'
+  | 'editorial_cover' | 'kinetic_typography' | 'vertical_timeline'
+  | 'process_blueprint' | 'comparative_split' | 'data_stage'
+  | 'market_chart' | 'orbit_stage' | 'cinema_end_frame'
+  | 'immersive_photo' | 'photo_essay' | 'cinematic_side_caption';
 
 export interface SceneItem {
   type: SceneType;
@@ -27,7 +36,14 @@ export interface SceneItem {
   barValues?: { label: string; value: number }[];
   visualQuery?: string;
   mediaFile?: string;
+  mediaFiles?: string[];
   mediaKind?: 'video' | 'image' | 'none';
+  visualTreatment?: VisualTreatment;
+  shotSize?: string;
+  textSide?: 'left' | 'right';
+  captionStyle?: 'ticker' | 'minimal' | 'documentary' | 'karaoke';
+  transitionStyle?: 'dissolve' | 'push' | 'wipe' | 'flash';
+  composition?: 'portrait' | 'widescreen';
   cameraMotion?: CameraMotion;
   sfxCue?: 'boom' | 'whoosh' | 'riser' | 'pulse';
   accentColor?: string;
