@@ -44,9 +44,18 @@ _TYPE_TREATMENTS = {
     "three_d_bars": ("data_stage", "market_chart"),
     "data_viz": ("data_stage", "market_chart"),
     "candlestick_chart": ("market_chart", "data_stage"),
-    "split_compare": ("comparative_split",),
-    "step_list": ("vertical_timeline",),
-    "process_diagram": ("process_blueprint",),
+    "split_compare": (
+        "comparative_split", "editorial_split", "kinetic_typography",
+        "documentary_lower_third", "editorial_cover",
+    ),
+    "step_list": (
+        "vertical_timeline", "kinetic_typography", "editorial_cover",
+        "documentary_lower_third", "photo_essay",
+    ),
+    "process_diagram": (
+        "process_blueprint", "kinetic_typography", "editorial_split",
+        "documentary_lower_third", "editorial_cover",
+    ),
     "kinetic_type": ("kinetic_typography", "editorial_cover"),
     "cinema_outro": ("cinema_end_frame", "hero_full_bleed"),
 }
