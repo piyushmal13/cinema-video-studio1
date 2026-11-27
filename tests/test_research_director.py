@@ -11,9 +11,9 @@ class ResearchDirectorTests(unittest.TestCase):
             route = route_production_request("Explain gold liquidity")
 
         self.assertEqual(route.format_hint, "vertical")
-        self.assertEqual(route.duration_sec, 36)
+        self.assertEqual(route.duration_sec, 45)
         self.assertFalse(route.documentary)
-        self.assertIn("--duration=36s", route.prompt)
+        self.assertIn("--duration=45s", route.prompt)
         research.assert_not_called()
 
     def test_documentary_duration_and_live_research_are_routed(self):
