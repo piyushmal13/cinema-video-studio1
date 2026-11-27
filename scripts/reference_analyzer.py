@@ -233,11 +233,13 @@ def build_style_brief(video_path: str | Path | None, image_paths: list[str], out
             intervals = [b - a for a, b in zip([0.0, *cuts], [*cuts, duration]) if b > a]
             report["average_shot_length_sec"] = round(sum(intervals) / len(intervals), 3) if intervals else None
             report["contact_sheet_frames"] = extract_video_contact_sheet(video_path, output_dir)
-    for path in image_paths:
+    contact_frames = list(report.get("contact_sheet_frames") or [])
+    for path in [*image_paths, *contact_frames]:
         metadata = _image_metadata(path)
         description = _ollama_image_description(path)
         if description:
             metadata["vision_description"] = description
+        metadata["reference_role"] = "uploaded_image" if path in image_paths else "video_contact_sheet_frame"
         metadata["estimated_focal_point"] = list(_focal_point_from_entropy(path))
         report["reference_images"].append(metadata)
     if report["video"] and report["video"].get("available"):
