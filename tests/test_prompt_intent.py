@@ -22,6 +22,21 @@ class PromptIntentTests(unittest.TestCase):
         self.assertEqual(intent.min_narration_words, 194)
         self.assertNotIn("/video", intent.prompt)
 
+    def test_branding_is_opt_in_and_ifx_is_detected_from_explicit_request(self):
+        general = parse_prompt_intent("Create a cinematic video about ocean science")
+        self.assertEqual(general.brand, "")
+        self.assertEqual(general.color, "#A8B2C0")
+
+        ifx = parse_prompt_intent("Create today's market update reel for IFX Trades")
+        self.assertEqual(ifx.brand, "IFXTRADES")
+        self.assertEqual(ifx.color, "#D4AF37")
+
+        excluded = parse_prompt_intent(
+            "Create a market explainer but do not include IFX Trades branding"
+        )
+        self.assertEqual(excluded.brand, "")
+        self.assertEqual(excluded.color, "#A8B2C0")
+
     def test_preserves_prompt_topic_after_brand_option(self):
         intent = parse_prompt_intent(
             "/video --brand=IFXTRADES --color=#12abEF Explain how solar panels work"
