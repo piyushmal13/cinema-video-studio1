@@ -138,6 +138,24 @@ def load_skill(name: str) -> str:
         return ""
 
 
+
+EDITING_STYLE_PROFILES = (
+    ("cinematic_documentary", "naturalistic photography, patient camera moves, restrained titles, filmic contrast and deliberate breathing room"),
+    ("kinetic_editorial", "bold kinetic type, rhythmic cuts, asymmetric layouts, punchy transitions and high-contrast accent typography"),
+    ("premium_minimal", "quiet luxury, elegant serif display moments, generous negative space, subtle motion and restrained sound design"),
+    ("newsroom_data", "precise data-led graphics, compact labels, clean chart animation, crisp cuts and a confident newsroom pace"),
+    ("photo_essay", "editorial still photography, slow parallax, tactile grain, thoughtful crops and understated lower-thirds"),
+    ("high_energy_social", "fast but legible pacing, varied shot scales, punch-in details, rhythmic typography and purposeful impact accents"),
+)
+
+
+def select_editing_style(seed: str) -> tuple[str, str]:
+    """Choose one reproducible, job-specific edit identity without extra model calls."""
+    digest = hashlib.sha256(str(seed).encode("utf-8")).hexdigest()
+    return EDITING_STYLE_PROFILES[int(digest[:8], 16) % len(EDITING_STYLE_PROFILES)]
+
+
+
 def build_creative_direction(
     text: str,
     *,
@@ -148,12 +166,16 @@ def build_creative_direction(
     research_context: str = "",
 ) -> str:
     skill = load_skill(topic_kind) or load_skill("general")
+    editing_style, editing_direction = select_editing_style(seed)
     common = f"""
 CREATIVE DIRECTOR BRIEF
 Production archetype: {production_style}
 Topic category: {topic_kind}
 Input mode: {input_mode}
 Production variation key: {seed}
+Editing style identity: {editing_style}
+Editing direction: {editing_direction}
+Use this as the film-wide visual identity, but vary shot composition and treatment per scene.
 
 NON-NEGOTIABLE CREATIVE RULES
 - Understand the actual subject and make every line, scene and visual serve that subject.
@@ -177,7 +199,7 @@ Use different shot families across the film: location establishing shots, close-
 human activity, real process footage, macro photography, archive/documentary footage,
 screen captures, maps, meaningful diagrams, data graphics, kinetic typography and
 generated motion. Choose only what fits the scene; do not force every category into one film.
-Consecutive scenes must not share the same composition or visual query.
+Consecutive scenes must not share the same composition or visual query. Give this production a distinct visual identity from other jobs: vary the opening grammar, shot rhythm, transition language, type scale, negative space and sound accents to fit the selected editing style. Do not reuse one fixed template across all videos.
 """.strip()
     context = ""
     if research_context.strip():
