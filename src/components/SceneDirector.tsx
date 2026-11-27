@@ -31,7 +31,7 @@ const Headline: React.FC<{
   fontFamily?: string;
 }> = ({ children, size, align = 'left', uppercase = false, color = '#F8FAFC', accentColor = '#D4AF37', fontFamily = '\"Montserrat\", \"Arial Black\", system-ui, sans-serif' }) => (
   <h1 style={{
-    fontFamily: '"Montserrat", "Arial Black", system-ui, sans-serif',
+    fontFamily,
     fontSize: size,
     fontWeight: 900,
     lineHeight: 0.98,
