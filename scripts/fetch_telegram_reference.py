@@ -19,7 +19,7 @@ ALLOWED_MIME = {
 
 
 def fetch_reference(file_id: str, kind: str, mime_type: str, output_dir: str | Path, token: str) -> dict:
-    if not re.fullmatch(r"[A-Za-z0-9_-]{10,512}", file_id):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,512}={0,2}", file_id):
         raise ValueError("Telegram file_id has an unexpected format.")
     if kind not in {"image", "video"} or mime_type.lower() not in ALLOWED_MIME:
         raise ValueError("Only JPG, PNG, WEBP and MP4/MOV references are accepted.")
