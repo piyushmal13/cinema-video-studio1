@@ -181,7 +181,9 @@ class GenerateAssetsTests(unittest.TestCase):
         ):
             result = generate_assets.generate_storyboard("A test prompt", "A test system prompt", 5)
 
-        self.assertEqual(result, storyboard)
+        self.assertEqual(result["narration"], storyboard["narration"])
+        self.assertEqual(result["scenes"], storyboard["scenes"])
+        self.assertEqual(result["storyboardProvider"], "pollinations:openai")
         self.assertEqual(post.call_args.args[0], "https://text.pollinations.ai/openai")
         self.assertEqual(post.call_args.kwargs["json"]["response_format"], {"type": "json_object"})
         self.assertEqual(post.call_args.kwargs["json"]["max_tokens"], 8192)
@@ -262,7 +264,7 @@ class GenerateAssetsTests(unittest.TestCase):
         )
 
         self.assertGreaterEqual(len(result["narration"].split()), 150)
-        self.assertIn("ko samajhne ke liye", result["narration"])
+        self.assertIn("Aaj ka market brief", result["narration"])
         self.assertGreaterEqual(len(result["scenes"]), 5)
         self.assertLessEqual(len(result["scenes"]), 6)
 
@@ -610,10 +612,11 @@ class GenerateAssetsTests(unittest.TestCase):
                 "A test prompt", "A test system prompt", 5
             )
 
-        self.assertEqual(post.call_count, 2)
-        sleep.assert_called_once_with(36)
+        self.assertEqual(post.call_count, 1)
+        sleep.assert_not_called()
         self.assertGreaterEqual(len(result["narration"].split()), 60)
-        self.assertEqual(len(result["scenes"]), 12)
+        self.assertTrue(result.get("degradedMode"))
+        self.assertEqual(len(result["scenes"]), 6)
 
     def test_short_storyboard_is_retried_with_an_explicit_minimum(self):
         scenes = [
@@ -658,10 +661,12 @@ class GenerateAssetsTests(unittest.TestCase):
         ):
             result = generate_assets.generate_storyboard("A test prompt", "A test system prompt", 5)
 
-        self.assertEqual(result, valid_storyboard)
+        self.assertEqual(result["narration"], valid_storyboard["narration"])
+        self.assertEqual(result["scenes"], valid_storyboard["scenes"])
+        self.assertEqual(result["storyboardProvider"], "pollinations:openai")
         self.assertEqual(post.call_count, 2)
         self.assertIn("at least 60 words", post.call_args_list[1].kwargs["json"]["messages"][1]["content"])
-        sleep.assert_called_once_with(46)
+        sleep.assert_not_called()
 
     def test_gemini_is_only_used_as_an_optional_fallback(self):
         scenes = [
@@ -700,7 +705,9 @@ class GenerateAssetsTests(unittest.TestCase):
         ):
             result = generate_assets.generate_storyboard("A test prompt", "A test system prompt", 5)
 
-        self.assertEqual(result, storyboard)
+        self.assertEqual(result["narration"], storyboard["narration"])
+        self.assertEqual(result["scenes"], storyboard["scenes"])
+        self.assertEqual(result["storyboardProvider"], "gemini:gemini-3.6-flash")
         self.assertEqual(
             [call.args[0] for call in post.call_args_list],
             [
