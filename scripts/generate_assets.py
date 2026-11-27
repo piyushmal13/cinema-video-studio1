@@ -96,7 +96,6 @@ sfxCue: boom, whoosh, riser, pulse.
 Weights must be positive. Data must be grounded. Illustrative visuals must be clearly labelled illustrative.
 Narration minimum for brief mode: {min_narration_words} words. In script mode, the supplied script overrides this length target."""
 
-"""
 
 def clean_json_response(raw_text: str) -> dict:
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text.strip(), flags=re.MULTILINE)
@@ -117,11 +116,11 @@ def build_fallback_storyboard(
 ) -> dict:
     """Topic-aware degraded-mode fallback; never reuses the old fixed 12-scene film."""
     latest_request = re.search(
-        r"Latest request:\\s*(.*?)(?:\\n\\n|$)", prompt, re.IGNORECASE | re.DOTALL
+        r"Latest request:\s*(.*?)(?:\n\n|$)", prompt, re.IGNORECASE | re.DOTALL
     )
     brief = latest_request.group(1) if latest_request else prompt
-    brief = re.sub(r"\\s+", " ", brief).strip()
-    topic = " ".join(re.findall(r"[\\w'-]+", brief, flags=re.UNICODE)[:10]) or "the requested subject"
+    brief = re.sub(r"\s+", " ", brief).strip()
+    topic = " ".join(re.findall(r"[\w'-]+", brief, flags=re.UNICODE)[:10]) or "the requested subject"
     kind = classify_topic(brief)
     rng = random.Random(stable_visual_seed(JOB_ID, 0, brief))
 
