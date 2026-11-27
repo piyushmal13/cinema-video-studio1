@@ -134,3 +134,10 @@ It extracts video format and shot-cut timing, creates a bounded frame contact sh
 The crop fallback uses image contrast/entropy as a focal-point heuristic; it is not semantic understanding and must not be treated as face/object detection. For production, use semantic subject and OCR/logo protection, generate crop previews and allow manual focal-point overrides. A social reel URL is a style reference only: this tool does not scrape, download or reproduce the creator's content.
 
 See [docs/REFERENCE_DRIVEN_EDITING_AND_ORCHESTRATION.md](docs/REFERENCE_DRIVEN_EDITING_AND_ORCHESTRATION.md) for the intended reference workflow, safe integration steps and the Dagu/Kestra/Temporal decision. An optional Dagu DAG starter is in \`orchestration/dagu/\`. Dagu has not been installed on a remote VPS or benchmarked at runtime by this code change.
+
+
+### Telegram reference attachments
+
+You can now send a reference photo or video to the Telegram bot with a caption describing the new reel. A photo is fitted and inserted into the most relevant scene; a reference video is analyzed for aspect ratio and shot rhythm and guides the new edit without copying its footage or audio. Supported formats: JPG, PNG, WEBP, MP4 and MOV, up to 20 MB per attachment. The reference download is private to the ephemeral GitHub Actions runner and is not stored in a public bucket.
+
+The bot requires the existing \`TELEGRAM_BOT_TOKEN\` GitHub secret. Optional local semantic image understanding requires a reachable Ollama vision endpoint and \`CINEMA_VISION_MODEL\`; without it, the pipeline uses metadata and a conservative crop heuristic. This is not yet multi-image album ingestion, and the system should still be reviewed for clipped logos/text before commercial delivery.

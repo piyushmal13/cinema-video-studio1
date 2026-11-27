@@ -130,7 +130,8 @@ def _ollama_image_description(path: str | Path) -> dict[str, Any] | None:
                 "prompt": (
                     "Describe this image for a professional video editor. Return concise JSON with "
                     "subject, visible_objects, action, environment, composition, focal_point, "
-                    "dominant_colors, visible_text, crop_warnings. Do not invent unseen details."
+                    "dominant_colors, visible_text, crop_warnings, and focal_point as normalized x/y numbers from 0 to 1. "
+                    "Do not invent unseen details."
                 ),
                 "images": [encoded], "stream": False, "format": "json",
             },
@@ -232,11 +233,13 @@ def build_style_brief(video_path: str | Path | None, image_paths: list[str], out
             intervals = [b - a for a, b in zip([0.0, *cuts], [*cuts, duration]) if b > a]
             report["average_shot_length_sec"] = round(sum(intervals) / len(intervals), 3) if intervals else None
             report["contact_sheet_frames"] = extract_video_contact_sheet(video_path, output_dir)
-    for path in image_paths:
+    contact_frames = list(report.get("contact_sheet_frames") or [])
+    for path in [*image_paths, *contact_frames]:
         metadata = _image_metadata(path)
         description = _ollama_image_description(path)
         if description:
             metadata["vision_description"] = description
+        metadata["reference_role"] = "uploaded_image" if path in image_paths else "video_contact_sheet_frame"
         metadata["estimated_focal_point"] = list(_focal_point_from_entropy(path))
         report["reference_images"].append(metadata)
     if report["video"] and report["video"].get("available"):
@@ -250,8 +253,114 @@ def build_style_brief(video_path: str | Path | None, image_paths: list[str], out
     return report
 
 
+
+def reference_prompt_context(report_path: str | Path) -> str:
+    """Turn measured reference cues into concise, non-copying editorial instructions."""
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    cues = []
+    video = report.get("video") or {}
+    if video.get("available"):
+        cues.append(
+            f"Reference editing grammar: {video.get('orientation')} {video.get('width')}x{video.get('height')}, "
+            f"{video.get('duration_sec')} seconds."
+        )
+        pace = report.get("average_shot_length_sec")
+        if pace:
+            cues.append(f"Use approximately {pace:.2f}s average shot rhythm as a pacing reference, not a fixed template.")
+        cuts = report.get("scene_cuts_sec") or []
+        if cuts:
+            cues.append(f"Reference contains about {len(cuts) + 1} detected shots; vary shot scale and transition timing.")
+    for image in (report.get("reference_images") or [])[:5]:
+        vision = image.get("vision_description")
+        if isinstance(vision, dict):
+            subject = vision.get("subject")
+            composition = vision.get("composition")
+            action = vision.get("action")
+            visible_text = vision.get("visible_text")
+            crop_warnings = vision.get("crop_warnings")
+            if subject:
+                cues.append(f"Supplied image subject: {subject}.")
+            if composition:
+                cues.append(f"Reference composition: {composition}.")
+            if action:
+                cues.append(f"Visible action: {action}.")
+            if visible_text:
+                cues.append(f"Preserve this visible text/branding: {visible_text}.")
+            if crop_warnings:
+                cues.append(f"Crop protection notes: {crop_warnings}.")
+        elif image.get("orientation"):
+            cues.append(f"Supplied reference image orientation: {image['orientation']}.")
+    if cues:
+        cues.append(
+            "Use the references as original visual direction and supplied source assets; "
+            "do not copy another creator's exact sequence, wording, footage or audio."
+        )
+    return "\n".join(cues)[:1800]
+
+
+def prepare_reference_images(
+    scenes: list[dict[str, Any]], manifest_path: str | Path,
+    orientation: str, public_dir: str | Path = "public",
+) -> dict[int, str]:
+    """Fit a supplied image and assign it to the most relevant storyboard scene."""
+    try:
+        manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if manifest.get("kind") != "image" or not manifest.get("path"):
+        return {}
+    source = Path(str(manifest["path"]))
+    if not source.is_file() or not scenes:
+        return {}
+
+    subject_text = ""
+    focal_x = focal_y = None
+    try:
+        report = json.loads(Path("out/reference_style.json").read_text(encoding="utf-8"))
+        image = (report.get("reference_images") or [{}])[0]
+        vision = image.get("vision_description") or {}
+        subject_text = " ".join(
+            str(vision.get(key, "")) for key in ("subject", "visible_objects", "action")
+        )
+        focal = vision.get("focal_point")
+        if isinstance(focal, dict):
+            focal_x, focal_y = float(focal.get("x")), float(focal.get("y"))
+        elif isinstance(focal, (list, tuple)) and len(focal) >= 2:
+            focal_x, focal_y = float(focal[0]), float(focal[1])
+        if focal_x is not None and not (0 <= focal_x <= 1 and 0 <= focal_y <= 1):
+            focal_x = focal_y = None
+    except (OSError, ValueError, TypeError, AttributeError):
+        subject_text = ""
+        focal_x = focal_y = None
+
+    width, height = (1080, 1920) if orientation == "vertical" else (1920, 1080)
+    target = Path(public_dir) / "media" / "user_reference_01.jpg"
+    crop = smart_crop_image(source, target, width, height, focal_x, focal_y)
+    if not crop.get("ok"):
+        return {}
+
+    tokens = {
+        token.casefold() for token in re.findall(r"[A-Za-z0-9]{3,}", subject_text)
+    }
+    scores = []
+    for index, scene in enumerate(scenes):
+        scene_text = " ".join(
+            str(scene.get(key, "")) for key in ("headline", "kicker", "visualQuery", "subline")
+        )
+        scene_tokens = {
+            token.casefold() for token in re.findall(r"[A-Za-z0-9]{3,}", scene_text)
+        }
+        scores.append((len(tokens & scene_tokens), index))
+    best_score, best_index = max(scores, default=(0, 0))
+    if not best_score:
+        best_index = 0
+    return {best_index: str(target.relative_to(public_dir)).replace("\\", "/")}
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--manifest", help="JSON manifest produced by fetch_telegram_reference.py")
     parser.add_argument("--video", help="Local reference video file; never a social URL")
     parser.add_argument("--images", nargs="*", default=[], help="Local reference image files")
     parser.add_argument("--output", default="out/reference_style.json")
@@ -259,14 +368,27 @@ def main() -> int:
     parser.add_argument("--crop-to", choices=["vertical", "landscape", "square"])
     parser.add_argument("--crop-dir", default="out/reference_crops")
     args = parser.parse_args()
-    if not args.video and not args.images:
-        parser.error("Supply --video and/or one or more --images")
-    report = build_style_brief(args.video, args.images, args.contact_sheet_dir)
-    if args.crop_to:
+    video_path = args.video
+    image_paths = list(args.images)
+    if args.manifest:
+        manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            parser.error("Reference manifest must be a JSON object")
+        if manifest.get("kind") == "video":
+            video_path = manifest.get("path") or video_path
+        elif manifest.get("kind") == "image":
+            image_paths.append(str(manifest.get("path") or ""))
+        else:
+            parser.error("Reference manifest kind must be image or video")
+    image_paths = [path for path in image_paths if path]
+    if not video_path and not image_paths:
+        parser.error("Supply --manifest, --video and/or one or more --images")
+    report = build_style_brief(video_path, image_paths, args.contact_sheet_dir)
+    if args.crop_to and image_paths:
         dimensions = {"vertical": (1080, 1920), "landscape": (1920, 1080), "square": (1080, 1080)}[args.crop_to]
         report["fitted_reference_images"] = [
             smart_crop_image(path, Path(args.crop_dir) / f"{Path(path).stem}_{args.crop_to}.jpg", *dimensions)
-            for path in args.images
+            for path in image_paths
         ]
     target = Path(args.output)
     target.parent.mkdir(parents=True, exist_ok=True)

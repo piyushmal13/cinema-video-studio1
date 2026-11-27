@@ -19,6 +19,36 @@ async function sendMessage(env, chatId, text) {
   }
 }
 
+
+function getReferenceAttachment(message) {
+  const photo = Array.isArray(message.photo) && message.photo.length
+    ? message.photo[message.photo.length - 1]
+    : null;
+  const candidate = photo
+    ? { file_id: photo.file_id, file_unique_id: photo.file_unique_id, kind: "image", mime_type: "image/jpeg", file_size: photo.file_size }
+    : message.video
+      ? { ...message.video, kind: "video", mime_type: message.video.mime_type || "video/mp4" }
+      : message.document
+        ? { ...message.document, kind: (message.document.mime_type || "").startsWith("image/") ? "image" : "video" }
+        : null;
+  if (!candidate || !candidate.file_id) return null;
+  const mime = String(candidate.mime_type || "").toLowerCase();
+  if (!["image/jpeg", "image/png", "image/webp", "video/mp4", "video/quicktime"].includes(mime)) {
+    return { error: "Unsupported reference format. Send JPG, PNG, WEBP or MP4." };
+  }
+  if (Number(candidate.file_size || 0) > 20 * 1024 * 1024) {
+    return { error: "Reference file is larger than Telegram's 20 MB download limit for this workflow." };
+  }
+  return {
+    file_id: candidate.file_id,
+    file_unique_id: candidate.file_unique_id || "",
+    kind: candidate.kind,
+    mime_type: mime,
+    file_name: candidate.file_name || "",
+    file_size: Number(candidate.file_size || 0),
+  };
+}
+
 function stripCommand(text) {
   return text.replace(/^\/(?:video|movie|cinema|reel)(?:@\w+)?\s*/i, "").trim();
 }
@@ -76,9 +106,14 @@ export default {
     }
 
     const text = (message.text || message.caption || "").trim();
-    if (!text) {
-      await sendMessage(env, chatId, "Send a text prompt or a caption with your video idea.");
-      return new Response("Text required", { status: 400 });
+    const reference = getReferenceAttachment(message);
+    if (reference?.error) {
+      await sendMessage(env, chatId, reference.error);
+      return new Response("Unsupported reference attachment", { status: 415 });
+    }
+    if (!text && !reference) {
+      await sendMessage(env, chatId, "Send a video idea, or attach a reference photo/video with a caption describing what to create.");
+      return new Response("Text or reference required", { status: 400 });
     }
 
     if (/^\/(?:id|start|help)(?:@\w+)?$/i.test(text)) {
@@ -114,7 +149,11 @@ export default {
       return new Response("Context cleared");
     }
 
-    const prompt = stripCommand(text);
+    const prompt = stripCommand(text) || (
+      reference?.kind === "image"
+        ? "Create an original video using the attached reference image as a visual asset. Understand its subject and composition, preserve important details, and build a relevant story around it."
+        : "Create an original video guided by the attached reference footage. Analyze its editing rhythm, shot structure, framing and visual mood; do not copy its footage or audio."
+    );
     const requestId = crypto.randomUUID();
     if (!prompt) {
       await sendMessage(env, chatId, "Add a topic, story, or script after the command.");
@@ -174,6 +213,11 @@ export default {
             chat_id: chatId,
             prompt_context: promptContext,
             request_id: requestId,
+            reference_file_id: reference?.file_id || "",
+            reference_file_unique_id: reference?.file_unique_id || "",
+            reference_kind: reference?.kind || "",
+            reference_mime_type: reference?.mime_type || "",
+            reference_file_name: reference?.file_name || "",
           },
         }),
       }
@@ -210,6 +254,7 @@ export default {
       chatId,
       `Production queued (${format === "landscape" ? "16:9 widescreen" : "9:16 vertical"}).\n\n` +
         `Brief: ${prompt.slice(0, 600)}${prompt.length > 600 ? "..." : ""}\n\n` +
+        (reference ? "The reference attachment will guide the visual style and image treatment. " : "") +
         "The render includes narrated voice, word-timed captions, a free generated score, and scene transition sounds. " +
         "The finished MP4 will be sent here when the GitHub Actions render completes." +
         contextNotice

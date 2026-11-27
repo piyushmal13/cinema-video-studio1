@@ -53,6 +53,27 @@ jobs:
       - name: Verify media and audio tools
         run: python -c "import auto_editor, gradio_client, gtts, librosa, mutagen, soundfile; print('media and audio dependencies ready')"
 
+      - name: Fetch and analyze user-supplied Telegram reference
+        if: github.event.client_payload.reference_file_id != ''
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          REFERENCE_FILE_ID: ${{ github.event.client_payload.reference_file_id }}
+          REFERENCE_KIND: ${{ github.event.client_payload.reference_kind }}
+          REFERENCE_MIME_TYPE: ${{ github.event.client_payload.reference_mime_type }}
+          FORMAT: ${{ github.event.inputs.format || github.event.client_payload.format || 'vertical' }}
+        run: |
+          python scripts/fetch_telegram_reference.py \
+            --file-id "$REFERENCE_FILE_ID" \
+            --kind "$REFERENCE_KIND" \
+            --mime-type "$REFERENCE_MIME_TYPE" \
+            --output-dir out/reference_media \
+            --manifest out/reference_manifest.json
+          python scripts/reference_analyzer.py \
+            --manifest out/reference_manifest.json \
+            --output out/reference_style.json \
+            --contact-sheet-dir out/reference_frames \
+            --crop-to "$FORMAT"
+
       - name: Prepare compact audio vault
         run: python scripts/setup_real_audio.py
 
@@ -69,7 +90,11 @@ jobs:
           CINEMA_MAX_VIDEO_CLIPS: '5'
           CINEMA_VIDEO_CLIP_TIMEOUT: '45'
           PREFER_GEMINI: '1'
-        run: python scripts/generate_assets.py
+        run: |
+          if [ -f out/reference_style.json ]; then
+            export PROMPT_CONTEXT="$(python scripts/reference_context.py --report out/reference_style.json --existing "$PROMPT_CONTEXT")"
+          fi
+          python scripts/generate_assets.py
 
       - name: Render Cinema Master MP4
         run: |
@@ -97,6 +122,9 @@ jobs:
             out/hardware_report.json
             out/model_admission.json
             out/production_ledger.jsonl
+            out/reference_style.json
+            out/reference_frames/**
+            out/reference_crops/**
           if-no-files-found: ignore
           retention-days: 14
 

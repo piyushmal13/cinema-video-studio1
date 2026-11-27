@@ -42,6 +42,7 @@ if __package__:
     from .timeline_export import export_otio
     from .visual_quality import audit_visual_plan
     from .kokoro_tts import generate_from_environment as generate_kokoro_from_environment
+    from .reference_analyzer import prepare_reference_images, reference_prompt_context
 else:
     from prompt_intent import compose_story_prompt, parse_prompt_intent, validate_storyboard
     from viral_engineer import (
@@ -67,6 +68,7 @@ else:
     from timeline_export import export_otio
     from visual_quality import audit_visual_plan
     from kokoro_tts import generate_from_environment as generate_kokoro_from_environment
+    from reference_analyzer import prepare_reference_images, reference_prompt_context
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
@@ -1545,6 +1547,9 @@ def main():
         )
 
     prompt_context = os.environ.get("PROMPT_CONTEXT", "").strip()
+    reference_context = reference_prompt_context("out/reference_style.json")
+    if reference_context:
+        prompt_context = "\n".join(part for part in (prompt_context, reference_context) if part)
     if trending_context and not route.research_context:
         prompt_context = "\n".join(
             part for part in (prompt_context, trending_context) if part
@@ -1623,6 +1628,9 @@ def main():
         scenes,
         max_clips=max(0, min(8, int(os.environ.get("CINEMA_MAX_VIDEO_CLIPS", "5")))),
     )
+    reference_scene_assets = prepare_reference_images(
+        scenes, "out/reference_manifest.json", orientation, "public"
+    )
 
     for idx, scene in enumerate(scenes):
         duration = (
@@ -1646,6 +1654,12 @@ def main():
             media_file, media_kind = f"media/scene_{idx}.mp4", "video"
         else:
             media_file, media_kind = fetch_broll_or_ai_visual(query, idx, orientation)
+
+        # A user-supplied reference image is an actual source asset, not just prompt context.
+        # Place it in the most relevant storyboard shot after focal-point-aware fitting.
+        if idx in reference_scene_assets:
+            media_file, media_kind = reference_scene_assets[idx], "image"
+            SCENE_MEDIA_FILES[idx] = [media_file]
 
         scene["mediaFile"] = media_file
         scene["mediaKind"] = media_kind
