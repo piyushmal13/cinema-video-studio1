@@ -1537,6 +1537,7 @@ def main():
 
     output = {
         "title": storyboard.get("title", "Cinema AI Video"),
+        "narration": narration,
         "brandTag": intent.brand,
         "themeColor": intent.color,
         "mode": intent.mode,
