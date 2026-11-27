@@ -7,6 +7,7 @@ from scripts.creative_director import (
     detect_supplied_script,
     diversify_scenes,
     infer_creative_intent,
+    select_editing_style,
 )
 
 
@@ -41,6 +42,15 @@ class CreativeDirectorTests(unittest.TestCase):
         self.assertEqual(classify_topic("Aaj ka gold market overview"), "market_update")
         self.assertEqual(classify_topic("Explain how gold futures contracts work"), "explainer")
         self.assertEqual(classify_topic("Create a launch video for a new product"), "commercial")
+
+    def test_editing_style_is_stable_per_job_and_selected_from_distinct_profiles(self):
+        first = select_editing_style("job-2026-11-28-a")
+        self.assertEqual(first, select_editing_style("job-2026-11-28-a"))
+        self.assertIn(first[0], {
+            "cinematic_documentary", "kinetic_editorial", "premium_minimal",
+            "newsroom_data", "photo_essay", "high_energy_social",
+        })
+        self.assertTrue(first[1])
 
     def test_video_generation_positions_are_spread_across_story(self):
         scenes = [{"weight": 1.0} for _ in range(12)]
