@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .visual_quality import audit_render
+    from .visual_quality import audit_render, audit_visual_plan
 except ImportError:
-    from visual_quality import audit_render
+    from visual_quality import audit_render, audit_visual_plan
 
 
 def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.12) -> list[dict[str, Any]]:
@@ -85,13 +85,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--video", default="out/final.mp4")
     parser.add_argument("--report", default="out/render_quality_report.json")
+    parser.add_argument("--video-data", default="public/video_data.json")
     parser.add_argument("--ocr", action="store_true", help="Require OCR-based text-overlap inspection.")
     args = parser.parse_args()
 
     report = {"render": audit_render(args.video)}
+    try:
+        video_data = json.loads(Path(args.video_data).read_text(encoding="utf-8"))
+        report["plan"] = audit_visual_plan(video_data.get("scenes", []), "public")
+    except (OSError, ValueError, TypeError) as error:
+        report["plan"] = {"passed": False, "errors": [f"Could not inspect storyboard data: {error}"]}
     if args.ocr:
         report["text_overlap"] = inspect_text_collisions(args.video)
-    report["passed"] = bool(report["render"].get("passed")) and (
+    report["passed"] = bool(report["render"].get("passed")) and bool(report["plan"].get("passed")) and (
         not args.ocr or bool(report["text_overlap"].get("passed"))
     )
     target = Path(args.report)
