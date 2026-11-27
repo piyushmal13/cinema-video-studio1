@@ -489,6 +489,15 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
                     sceneIndex={index}
                     isLandscape={Boolean(videoData.isLandscape || videoData.format === 'landscape')}
                   />
+                  {index === scenes.length - 1 && scene.sourceNote && (
+                    <div style={{
+                      position: 'absolute', left: '8%', right: '8%', bottom: '13%',
+                      color: 'rgba(203,213,225,0.72)', font: '600 10px "JetBrains Mono", monospace',
+                      letterSpacing: '0.06em', textAlign: 'left', zIndex: 25,
+                      overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                      pointerEvents: 'none',
+                    }}>{scene.sourceNote}</div>
+                  )}
                   {index > 0 && !videoData.masterAudioFile && sfxFile && (
                     <Sequence
                       from={0}
