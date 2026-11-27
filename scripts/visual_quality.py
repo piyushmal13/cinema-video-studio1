@@ -24,7 +24,7 @@ def audit_visual_plan(scenes: list[dict[str, Any]], public_dir: str | Path = "pu
         warnings.append("Fewer than 60% of scenes have downloaded/generated media; some procedural fallbacks may appear.")
     hashes: dict[str, list[str]] = {}
     for relative in files:
-        path = root / relative.replace("/", str(Path("/")).lstrip("/"))
+        path = root / Path(*relative.replace("\\", "/").split("/"))
         if not path.is_file():
             warnings.append(f"Scene media is missing: {relative}")
             continue
