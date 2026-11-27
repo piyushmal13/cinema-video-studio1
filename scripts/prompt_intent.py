@@ -87,7 +87,7 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
     if re.search(r"\b(?:female|woman|women)\s+(?:voice|voiceover|narrator|narration)\b|\b(?:voice|voiceover|narrator|narration)\s+(?:female|woman)\b|--female\b", lower):
         voice = "hi-IN-SwaraNeural" if language != "English" else "en-US-AvaMultilingualNeural"
 
-    brand = "IFXTRADES"
+    brand = ""
     brand_match = re.search(
         r"--brand(?:=|\s+)(?:\"([^\"]+)\"|'([^']+)'|([A-Za-z0-9_-]+))",
         original,
@@ -97,8 +97,23 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
         brand = next(group for group in brand_match.groups() if group).strip().upper()
         if len(brand) > 32:
             raise ValueError("Brand names must be 32 characters or fewer.")
+    else:
+        ifx_mentioned = bool(
+            re.search(r"\b(?:IFX\s*Trades|IndiaFXTrades|India\s*FX\s*Trades)\b", original, re.IGNORECASE)
+        )
+        ifx_explicitly_excluded = bool(
+            re.search(
+                r"(?:\b(?:no|not|without|exclude|excluding|omit|remove|don't|do not)\b.{0,48}\b(?:IFX\s*Trades|IndiaFXTrades|India\s*FX\s*Trades)\b)"
+                r"|(?:\b(?:IFX\s*Trades|IndiaFXTrades|India\s*FX\s*Trades)\b.{0,32}\b(?:not|off|excluded|omitted)\b)",
+                original,
+                re.IGNORECASE,
+            )
+        )
+        if ifx_mentioned and not ifx_explicitly_excluded:
+            brand = "IFXTRADES"
 
-    color = "#D4AF37"
+    # IFX's gold is a brand treatment, not the global default for unrelated videos.
+    color = "#D4AF37" if brand == "IFXTRADES" else "#A8B2C0"
     color_match = re.search(r"--color=([^\s]+)", original, re.IGNORECASE)
     if color_match:
         requested_color = color_match.group(1)
