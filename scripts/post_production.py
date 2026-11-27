@@ -134,9 +134,6 @@ def run(video_path: str | Path, data_path: str | Path, output_dir: str | Path) -
     cover_path = output / "cover.jpg"
     if create_cover(video, cover_path, package["aspect_ratio"]):
         package["cover"] = str(cover_path)
-        (output / "social_package.json").write_text(
-            json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
     else:
         package["cover"] = None
     (output / "social_package.json").write_text(
