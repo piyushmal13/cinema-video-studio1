@@ -85,6 +85,17 @@ jobs:
         if: always()
         run: python scripts/cost_ledger.py --output out/final.mp4 --video-data public/video_data.json --hardware-report out/hardware_report.json --ledger out/production_ledger.jsonl
 
+      - name: Preserve lightweight production telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cinema-production-telemetry-${{ github.run_id }}
+          path: |
+            out/hardware_report.json
+            out/production_ledger.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Deliver Film and Generated Caption to Telegram Phone Chat
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

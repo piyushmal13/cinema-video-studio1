@@ -1,0 +1,41 @@
+name: Repository Scout
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "GitHub repository search query"
+        required: false
+        default: "open source AI video generation workflow ComfyUI language:Python"
+      limit:
+        description: "Maximum ranked repositories"
+        required: false
+        default: "30"
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install scout dependency
+        run: python -m pip install "requests>=2.31,<3"
+      - name: Discover and rank repositories
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/repo_scout.py \
+            --query "${{ inputs.query }}" \
+            --limit "${{ inputs.limit }}" \
+            --output out/repository_scout.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cinema-repository-scout-${{ github.run_id }}
+          path: out/repository_scout.json
+          if-no-files-found: error
+          retention-days: 14
