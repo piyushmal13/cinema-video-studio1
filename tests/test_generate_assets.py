@@ -176,6 +176,7 @@ class GenerateAssetsTests(unittest.TestCase):
 
         with (
             patch.object(generate_assets, "GEMINI_API_KEY", "test-gemini-key"),
+            patch.dict(os.environ, {"PREFER_GEMINI": "0"}),
             patch.object(generate_assets.requests, "post", return_value=response) as post,
         ):
             result = generate_assets.generate_storyboard("A test prompt", "A test system prompt", 5)
@@ -218,6 +219,7 @@ class GenerateAssetsTests(unittest.TestCase):
 
         with (
             patch.object(generate_assets, "GEMINI_API_KEY", "test-gemini-key"),
+            patch.dict(os.environ, {"PREFER_GEMINI": "0"}),
             patch.object(
                 generate_assets.requests,
                 "post",
@@ -242,9 +244,12 @@ class GenerateAssetsTests(unittest.TestCase):
             )
 
         self.assertGreaterEqual(len(result["narration"].split()), 75)
-        self.assertEqual(len(result["scenes"]), 12)
+        self.assertGreaterEqual(len(result["scenes"]), 5)
+        self.assertLessEqual(len(result["scenes"]), 6)
         self.assertAlmostEqual(sum(scene["weight"] for scene in result["scenes"]), 1.0)
         self.assertIn("gold-market liquidity", result["narration"].lower())
+        self.assertTrue(result.get("degradedMode"))
+        self.assertEqual(len({scene["visualQuery"] for scene in result["scenes"]}), len(result["scenes"]))
 
     def test_deterministic_fallback_supports_hinglish_and_runtime_word_target(self):
         result = generate_assets.build_fallback_storyboard(
@@ -257,8 +262,9 @@ class GenerateAssetsTests(unittest.TestCase):
         )
 
         self.assertGreaterEqual(len(result["narration"].split()), 150)
-        self.assertIn("Aaj hum", result["narration"])
-        self.assertEqual(len(result["scenes"]), 12)
+        self.assertIn("ko samajhne ke liye", result["narration"])
+        self.assertGreaterEqual(len(result["scenes"]), 5)
+        self.assertLessEqual(len(result["scenes"]), 6)
 
     def test_edge_no_audio_retries_voices_then_uses_gtts_with_word_timings(self):
         class NoAudioCommunicate:
@@ -374,14 +380,27 @@ class GenerateAssetsTests(unittest.TestCase):
             self.assertIn("model=wan", get.call_args.args[0])
             self.assertIn("width=480&height=832", get.call_args.args[0])
 
-    def test_video_generation_skips_non_hero_scenes(self):
-        with patch.object(generate_assets.requests, "get") as get:
-            self.assertFalse(
-                generate_assets.try_generate_ai_video_clip(
-                    "A visual", 1, "landscape", "unused.mp4"
+    def test_video_generation_attempts_any_selected_scene_position(self):
+        response = Mock(
+            status_code=200,
+            content=b"\\x00\\x00\\x00\\x20ftyp" + b"x" * 60_000,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = os.path.join(temp_dir, "scene.mp4")
+            with (
+                patch.dict(os.environ, {
+                    "CINEMA_MEDIA_CACHE_DIR": os.path.join(temp_dir, "cache"),
+                    "CINEMA_VIDEO_CLIP_TIMEOUT": "20",
+                }),
+                patch.object(generate_assets.requests, "get", return_value=response) as get,
+                patch.object(generate_assets, "_is_valid_mp4", return_value=True),
+            ):
+                generated = generate_assets.try_generate_ai_video_clip(
+                    "A meaningful visual for a middle scene", 4, "landscape", output_path
                 )
-            )
-        get.assert_not_called()
+        self.assertTrue(generated)
+        self.assertTrue(os.path.isfile(output_path))
+        self.assertIn("width=832&height=480", get.call_args.args[0])
 
     def test_video_generation_uses_zero_gpu_after_pollinations_fails(self):
         response = Mock(status_code=429, content=b"")
