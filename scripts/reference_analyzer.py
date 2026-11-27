@@ -252,6 +252,7 @@ def build_style_brief(video_path: str | Path | None, image_paths: list[str], out
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--manifest", help="JSON manifest produced by fetch_telegram_reference.py")
     parser.add_argument("--video", help="Local reference video file; never a social URL")
     parser.add_argument("--images", nargs="*", default=[], help="Local reference image files")
     parser.add_argument("--output", default="out/reference_style.json")
@@ -259,14 +260,27 @@ def main() -> int:
     parser.add_argument("--crop-to", choices=["vertical", "landscape", "square"])
     parser.add_argument("--crop-dir", default="out/reference_crops")
     args = parser.parse_args()
-    if not args.video and not args.images:
-        parser.error("Supply --video and/or one or more --images")
-    report = build_style_brief(args.video, args.images, args.contact_sheet_dir)
-    if args.crop_to:
+    video_path = args.video
+    image_paths = list(args.images)
+    if args.manifest:
+        manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            parser.error("Reference manifest must be a JSON object")
+        if manifest.get("kind") == "video":
+            video_path = manifest.get("path") or video_path
+        elif manifest.get("kind") == "image":
+            image_paths.append(str(manifest.get("path") or ""))
+        else:
+            parser.error("Reference manifest kind must be image or video")
+    image_paths = [path for path in image_paths if path]
+    if not video_path and not image_paths:
+        parser.error("Supply --manifest, --video and/or one or more --images")
+    report = build_style_brief(video_path, image_paths, args.contact_sheet_dir)
+    if args.crop_to and image_paths:
         dimensions = {"vertical": (1080, 1920), "landscape": (1920, 1080), "square": (1080, 1080)}[args.crop_to]
         report["fitted_reference_images"] = [
             smart_crop_image(path, Path(args.crop_dir) / f"{Path(path).stem}_{args.crop_to}.jpg", *dimensions)
-            for path in args.images
+            for path in image_paths
         ]
     target = Path(args.output)
     target.parent.mkdir(parents=True, exist_ok=True)
