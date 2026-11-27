@@ -56,6 +56,10 @@ jobs:
           FORMAT: ${{ github.event.inputs.format || github.event.client_payload.format || 'vertical' }}
           PROMPT: ${{ github.event.inputs.prompt || github.event.client_payload.text }}
           PROMPT_CONTEXT: ${{ github.event.client_payload.prompt_context }}
+          CINEMA_JOB_ID: ${{ github.event.client_payload.request_id || github.run_id }}
+          CINEMA_MAX_VIDEO_CLIPS: '3'
+          CINEMA_VIDEO_CLIP_TIMEOUT: '45'
+          PREFER_GEMINI: '1'
         run: python scripts/generate_assets.py
 
       - name: Render Cinema Master MP4
