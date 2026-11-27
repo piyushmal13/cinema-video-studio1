@@ -37,17 +37,19 @@ CINEMA_VISION_MODEL=qwen2.5vl:3b python scripts/reference_analyzer.py --images /
 \`\`\`
 Model availability and VRAM requirements vary; test on the actual host before enabling it. The user's known 4 GB AMD GPU is not a dependable modern video-diffusion target. The vision call is optional and is not a requirement for CPU editorial rendering.
 
-## Next integration gate
+## Telegram reference ingestion now wired
 
-The analyzer is deliberately a safe, testable foundation—not yet a claim that Telegram attachments are persisted or that every render consumes reference media automatically. The next integration requires:
-1. Telegram Worker support for photo/video/document messages.
-2. Private object storage (Cloudflare R2 or equivalent) with size/type limits and expiring signed URLs.
-3. A manifest passed to GitHub Actions by opaque object key, never raw binary or public Telegram file tokens.
-4. Download and malware/type/size validation in the production runner.
-5. Reference style JSON fed into creative direction and per-shot crop metadata fed into Remotion.
-6. A contact-sheet approval/edit step for high-impact commercial work.
+The current branch adds a first end-to-end attachment path:
+1. Telegram Worker accepts a photo, video, or image/video document with optional caption.
+2. It sends the Telegram file ID, media kind and MIME type through the private GitHub repository-dispatch payload. It never sends the file bytes or bot token in that payload.
+3. GitHub Actions uses the existing Telegram bot secret to call getFile and download the user-supplied attachment directly into the ephemeral runner.
+4. The downloader enforces a 20 MB cap, extension/MIME allowlists, temporary-file writes and size verification. It never prints the tokenized download URL.
+5. The analyzer creates reference style JSON. A reference image is focal-point fitted and inserted into the best-matching scene (first scene when no semantic match is available); reference video contributes pacing and cut-rhythm direction, not copied footage.
+6. The storyboard prompt receives the extracted style cues, and the output remains the studio's original narration and edit.
 
-Do not expose R2 buckets or reference media publicly by default. Do not store Telegram bot tokens or signed URLs in artifacts/logs.
+This path does not require an R2 bucket for a single Telegram attachment. It is limited by Telegram Bot API download size and a single attachment per message. Telegram albums/multiple reference attachments, malware scanning, OCR-specific validation and a human crop-preview approval flow remain future work. The GitHub runner is ephemeral; downloaded source media is not persisted in a public bucket.
+
+Do not store Telegram bot tokens or tokenized download URLs in artifacts/logs. User-supplied media rights still need to be checked before commercial publishing.
 
 ## Reference-image crop contract
 
