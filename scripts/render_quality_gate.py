@@ -96,6 +96,7 @@ def main() -> int:
         critical_markers = (
             "Scene media is missing:",
             "Duplicate media files are reused",
+            "Repeated visual queries were found:",
             "Visual grammar is too narrow:",
             "Adjacent scenes repeat the same composition",
         )
