@@ -79,7 +79,7 @@ class ResearchDirectorTests(unittest.TestCase):
             context = fetch_live_research("Explain the gold market", timeout=3)
 
         self.assertIn("Gold market outlook", context)
-        self.assertIn("DuckDuckGo context", context)
+        self.assertIn("Search context", context)
         self.assertEqual(get.call_count, 2)
 
 
