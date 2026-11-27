@@ -138,7 +138,10 @@ def build_viral_plan(
         archetype = "phonk"
     elif mode == "cinema" or "--movie" in lower or "--cinema" in lower:
         archetype = "cinema"
-    elif re.search(r"\b(?:market|forex|xauusd|gold|cpi|nfp|fomc|breaking news|market update)\b", lower):
+    elif (
+        re.search(r"\b(?:market|markets|forex|xauusd|dxy|cpi|nfp|fomc|breaking news)\b", lower)
+        and re.search(r"\b(?:today|aaj|latest|current|update|overview|outlook|session|news|calendar|right now|daily)\b", lower)
+    ):
         archetype = "newsroom"
     elif re.search(r"\b(?:product|brand|campaign|advertisement|ad film|launch)\b", lower):
         archetype = "commercial"
