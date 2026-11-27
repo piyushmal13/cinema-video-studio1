@@ -143,7 +143,7 @@ def deliver_video(
         response.status_code >= 400
         and "request entity too large" in str(result).lower()
     ):
-        _send_public_host_link(source, bot_token, chat_id, post)
+        _send_public_host_link(source, bot_token, chat_id, post, caption)
         return
 
     if response.status_code >= 400:
