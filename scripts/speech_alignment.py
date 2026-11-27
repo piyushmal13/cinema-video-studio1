@@ -25,7 +25,6 @@ def align_with_whisperx(
         return None
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    compute_type = os.environ.get("WHISPERX_COMPUTE_TYPE", "float16" if device == "cuda" else "int8")
     try:
         audio = whisperx.load_audio(str(path))
         model_a, metadata = whisperx.load_align_model(
