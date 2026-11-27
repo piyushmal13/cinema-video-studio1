@@ -66,9 +66,9 @@ class MediaAssetCacheTests(unittest.TestCase):
                 "gold bars in a vault", "vertical", expected_kind="image", variation="job-3"
             )
 
-        self.assertEqual(hit_one[0].read_bytes(), first.read_bytes())
-        self.assertEqual(hit_two[0].read_bytes(), second.read_bytes())
-        self.assertIsNone(no_cross_hit)
+            self.assertEqual(hit_one[0].read_bytes(), first.read_bytes())
+            self.assertEqual(hit_two[0].read_bytes(), second.read_bytes())
+            self.assertIsNone(no_cross_hit)
 
 if __name__ == "__main__":
     unittest.main()
