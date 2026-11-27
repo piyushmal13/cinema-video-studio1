@@ -383,7 +383,7 @@ class GenerateAssetsTests(unittest.TestCase):
     def test_video_generation_attempts_any_selected_scene_position(self):
         response = Mock(
             status_code=200,
-            content=b"\\x00\\x00\\x00\\x20ftyp" + b"x" * 60_000,
+            content=b"ftyp" + b"x" * 60_000,
         )
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = os.path.join(temp_dir, "scene.mp4")
