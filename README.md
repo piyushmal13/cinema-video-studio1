@@ -111,3 +111,11 @@ Optional tools:
 - python scripts/hardware_doctor.py — read-only CPU/RAM/GPU/FFmpeg capability report; no model downloads or driver changes.
 - python scripts/repo_scout.py --limit 30 — ranks GitHub repositories by licence signal, stars, recency and archive status. It never clones or executes results. Set GITHUB_TOKEN for higher API limits.
 - python scripts/cost_ledger.py --output out/final.mp4 --video-data public/video_data.json — records measured duration, file sizes, providers and degraded-mode state. Unknown cash costs stay null, not zero.
+
+## Model and GPU admission
+
+- `python scripts/model_router.py` reports which local video models are even plausible for the detected NVIDIA free VRAM. It never downloads weights.
+- `python scripts/model_router.py --list-models` prints the conservative model registry.
+- See [docs/VIDEO_MODEL_AND_COMPUTE_MATRIX_2026.md](docs/VIDEO_MODEL_AND_COMPUTE_MATRIX_2026.md) for current model, licence and free-compute trade-offs.
+
+This is a coarse admission gate, not a guarantee that a model will load or render successfully. Exact model revisions and workflows still require a benchmark.
