@@ -313,15 +313,11 @@ def prepare_reference_images(
     source = Path(str(manifest["path"]))
     if not source.is_file() or not scenes:
         return {}
-    width, height = (1080, 1920) if orientation == "vertical" else (1920, 1080)
-    target = Path(public_dir) / "media" / "user_reference_01.jpg"
-    crop = smart_crop_image(source, target, width, height, focal_x, focal_y)
-    if not crop.get("ok"):
-        return {}
-    # Prefer a scene whose shot description overlaps the vision model's subject terms.
-    report_path = Path("out/reference_style.json")
+
+    subject_text = ""
+    focal_x = focal_y = None
     try:
-        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report = json.loads(Path("out/reference_style.json").read_text(encoding="utf-8"))
         image = (report.get("reference_images") or [{}])[0]
         vision = image.get("vision_description") or {}
         subject_text = " ".join(
@@ -329,36 +325,37 @@ def prepare_reference_images(
         )
         focal = vision.get("focal_point")
         if isinstance(focal, dict):
-            try:
-                focal_x, focal_y = float(focal.get("x")), float(focal.get("y"))
-                if not (0 <= focal_x <= 1 and 0 <= focal_y <= 1):
-                    focal_x = focal_y = None
-            except (TypeError, ValueError):
-                focal_x = focal_y = None
+            focal_x, focal_y = float(focal.get("x")), float(focal.get("y"))
         elif isinstance(focal, (list, tuple)) and len(focal) >= 2:
-            try:
-                focal_x, focal_y = float(focal[0]), float(focal[1])
-                if not (0 <= focal_x <= 1 and 0 <= focal_y <= 1):
-                    focal_x = focal_y = None
-            except (TypeError, ValueError):
-                focal_x = focal_y = None
-        else:
+            focal_x, focal_y = float(focal[0]), float(focal[1])
+        if focal_x is not None and not (0 <= focal_x <= 1 and 0 <= focal_y <= 1):
             focal_x = focal_y = None
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         subject_text = ""
+        focal_x = focal_y = None
+
+    width, height = (1080, 1920) if orientation == "vertical" else (1920, 1080)
+    target = Path(public_dir) / "media" / "user_reference_01.jpg"
+    crop = smart_crop_image(source, target, width, height, focal_x, focal_y)
+    if not crop.get("ok"):
+        return {}
+
     tokens = {
         token.casefold() for token in re.findall(r"[A-Za-z0-9]{3,}", subject_text)
     }
     scores = []
     for index, scene in enumerate(scenes):
-        scene_text = " ".join(str(scene.get(key, "")) for key in ("headline", "kicker", "visualQuery", "subline"))
-        scene_tokens = {token.casefold() for token in re.findall(r"[A-Za-z0-9]{3,}", scene_text)}
+        scene_text = " ".join(
+            str(scene.get(key, "")) for key in ("headline", "kicker", "visualQuery", "subline")
+        )
+        scene_tokens = {
+            token.casefold() for token in re.findall(r"[A-Za-z0-9]{3,}", scene_text)
+        }
         scores.append((len(tokens & scene_tokens), index))
     best_score, best_index = max(scores, default=(0, 0))
     if not best_score:
         best_index = 0
     return {best_index: str(target.relative_to(public_dir)).replace("\\", "/")}
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", help="JSON manifest produced by fetch_telegram_reference.py")
