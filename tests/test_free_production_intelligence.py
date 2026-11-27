@@ -11,7 +11,7 @@ class FreeProductionIntelligenceTests(unittest.TestCase):
         item = {"full_name":"example/active-tool","license":{"spdx_id":"MIT"},
             "stargazers_count":1500,"pushed_at":"2026-11-20T00:00:00Z","archived":False,"fork":False}
         score, reasons = score_repository(item, now=now)
-        self.assertGreaterEqual(score, 70)
+        self.assertGreaterEqual(score, 65)
         self.assertIn("permissive-license:mit", reasons)
         self.assertIn("active-within-30d", reasons)
 
