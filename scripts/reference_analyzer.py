@@ -140,18 +140,21 @@ def _gemini_image_description(path: str | Path) -> dict[str, Any] | None:
         "crop_warnings, and editing_notes. Identify important logos, product labels, faces, "
         "and text that must not be clipped. Do not infer identity or invent unseen details."
     )
-    response = requests.post(
-        "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
-        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-        json={
-            "contents": [{"role": "user", "parts": [
-                {"text": prompt},
-                {"inlineData": {"mimeType": "image/jpeg", "data": encoded}},
-            ]}],
-            "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 900},
-        },
-        timeout=(10, 75),
-    )
+    try:
+        response = requests.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            json={
+                "contents": [{"role": "user", "parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": "image/jpeg", "data": encoded}},
+                ]}],
+                "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 900},
+            },
+            timeout=(10, 75),
+        )
+    except requests.RequestException:
+        return None
     if response.status_code != 200:
         return {"status": "unavailable", "reason": f"Gemini vision returned HTTP {response.status_code}"}
     try:
@@ -284,7 +287,9 @@ def build_style_brief(video_path: str | Path | None, image_paths: list[str], out
     contact_frames = list(report.get("contact_sheet_frames") or [])
     for path in [*image_paths, *contact_frames]:
         metadata = _image_metadata(path)
-        description = _gemini_image_description(path) or _ollama_image_description(path)
+        description = _gemini_image_description(path)
+        if not description or description.get("status") == "unavailable":
+            description = _ollama_image_description(path)
         if description:
             metadata["vision_description"] = description
         metadata["reference_role"] = "uploaded_image" if path in image_paths else "video_contact_sheet_frame"
