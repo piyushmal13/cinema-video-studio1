@@ -29,6 +29,12 @@ class GpuNotebookTests(unittest.TestCase):
         self.assertIn("getWebhookInfo", notebook_text)
         self.assertIn("ALLOWED_CHAT_ID", notebook_text)
         self.assertNotIn("123456789:ABC", notebook_text)
+        self.assertIn("CINEMA_JOB_ID", notebook_text)
+        self.assertIn("uuid.uuid4().hex", notebook_text)
+        self.assertIn("hashlib.sha256", notebook_text)
+        self.assertIn("prepare_social_package", notebook_text)
+        self.assertIn("deliver_video", notebook_text)
+        self.assertNotIn("4200 + idx", notebook_text)
 
 
 if __name__ == "__main__":
