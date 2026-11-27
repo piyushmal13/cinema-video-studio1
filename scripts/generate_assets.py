@@ -84,11 +84,12 @@ Create a complete {target_words} spoken script and {scene_count_instruction} pur
 {style_instruction}
 {creative_direction}
 Use brandTag "{brand}", themeColor "{color}", and mode "{mode}".
+{brand_style_instruction}
 
 BRIEF MODE: The user has supplied an idea or instruction, not a finished script. Understand the real request, research it when requested/current, and write original narration. Never copy the Telegram command into voiceover.
 SCRIPT MODE: When the user supplied a complete script, keep that exact script as the spoken narration. Do not paraphrase, summarise, shorten, translate or insert additional spoken words. Direct scenes and timing around it.
 Do not invent facts, prices, statistics, quotes, people, sources or outcomes. Distinguish verified facts, analysis and scenarios. Never invent market data. Never use a chart without supplied or retrieved values. No generic AI phrases, empty hype, filler, or repetitive conclusions.
-Never add a brand, logo, watermark, CTA or product promotion unless explicitly requested.
+Never add a brand, logo, watermark, CTA or product promotion unless a brandTag is supplied above or the user explicitly requests it.
 
 Return ONLY one valid JSON object:
 - title: specific, concise title
@@ -1528,7 +1529,22 @@ def main():
     )
     scene_count_instruction = f"exactly {viral_plan.scene_count}"
 
+    brand_style_instruction = (
+        "IFXTRADES EDITORIAL STANDARD: This is a premium financial-technology explainer, not a hype ad. "
+        "Use near-black/obsidian and deep navy backgrounds (#05080F, #0B132B); white primary typography; "
+        "IFX gold (#D4AF37) for key emphasis; use cyan (#00D4FF) sparingly for technical/data accents. "
+        "Keep one clear message per scene. Headlines should be concise (ideally 3–6 words), kickers 1–3 words, "
+        "and sublines one short explanatory sentence. Never layer two headlines, place captions over the title, "
+        "or put essential text near the frame edges. Keep a generous top, side and bottom safe area. "
+        "Use genuine trading interfaces, market structure, execution workflow, risk controls, VPS/server "
+        "infrastructure and clearly labelled conceptual diagrams when relevant. Avoid casino imagery, "
+        "money piles, luxury cars, rockets, fake profit dashboards, generic crypto visuals and decorative "
+        "charts without sourced values. Explain technical terms in plain language. No profit promises, "
+        "signal-selling language or unsupported performance claims."
+        if intent.brand == "IFXTRADES" else ""
+    )
     sys_prompt = SYSTEM_PROMPT.format(
+        brand_style_instruction=brand_style_instruction,
         target_words=intent.target_words,
         min_narration_words=max(30, intent.min_narration_words),
         scene_count_instruction=scene_count_instruction,
