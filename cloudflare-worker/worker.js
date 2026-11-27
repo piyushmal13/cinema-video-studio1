@@ -115,6 +115,7 @@ export default {
     }
 
     const prompt = stripCommand(text);
+    const requestId = crypto.randomUUID();
     if (!prompt) {
       await sendMessage(env, chatId, "Add a topic, story, or script after the command.");
       return new Response("Prompt required", { status: 400 });
@@ -172,6 +173,7 @@ export default {
             format,
             chat_id: chatId,
             prompt_context: promptContext,
+            request_id: requestId,
           },
         }),
       }

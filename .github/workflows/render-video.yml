@@ -56,6 +56,10 @@ jobs:
           FORMAT: ${{ github.event.inputs.format || github.event.client_payload.format || 'vertical' }}
           PROMPT: ${{ github.event.inputs.prompt || github.event.client_payload.text }}
           PROMPT_CONTEXT: ${{ github.event.client_payload.prompt_context }}
+          CINEMA_JOB_ID: ${{ github.event.client_payload.request_id || github.run_id }}
+          CINEMA_MAX_VIDEO_CLIPS: '3'
+          CINEMA_VIDEO_CLIP_TIMEOUT: '45'
+          PREFER_GEMINI: '1'
         run: python scripts/generate_assets.py
 
       - name: Render Cinema Master MP4
@@ -68,11 +72,14 @@ jobs:
             npm run build
           fi
 
-      - name: Deliver Film Directly to Telegram Phone Chat
+      - name: Generate cover and social publishing package
+        run: python scripts/post_production.py --video out/final.mp4 --data public/video_data.json --output-dir out
+
+      - name: Deliver Film and Generated Caption to Telegram Phone Chat
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ github.event.client_payload.chat_id || secrets.TELEGRAM_CHAT_ID }}
-        run: python scripts/deliver_video.py --video out/final.mp4
+        run: python scripts/deliver_video.py --video out/final.mp4 --caption-file out/telegram_caption.txt --thumbnail out/cover.jpg
 
       - name: Notify Telegram when generation fails
         if: failure()

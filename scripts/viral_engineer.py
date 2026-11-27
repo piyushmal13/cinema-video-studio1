@@ -35,9 +35,44 @@ class ViralPlan:
                 "high-contrast visual beats, and fast but coherent pacing. Each scene "
                 "must advance the explanation rather than repeat the same claim."
             )
+        if self.archetype == "newsroom":
+            return (
+                "Direct this as a modern newsroom explainer. Lead with the verified "
+                "development, show why it matters, compare relevant evidence, explain "
+                "uncertainty and finish with upcoming catalysts. Keep sourced facts, "
+                "analysis and scenarios visually and verbally distinct."
+            )
+        if self.archetype == "commercial":
+            return (
+                "Use a product-led commercial story: real problem, product demonstration, "
+                "specific differentiator, proof that exists in the brief and a clear CTA "
+                "only when requested. Avoid generic floating shapes and invented claims."
+            )
+        if self.archetype == "explainer":
+            return (
+                "Teach one concrete learning outcome using a real example, ordered mechanism, "
+                "visual demonstration and practical conclusion. Every visual must clarify "
+                "the lesson, not merely decorate the screen."
+            )
+        if self.archetype == "travel":
+            return (
+                "Use documentary travel pacing with location-specific environments, "
+                "human activity, close details and geographic context. Avoid unrelated stock."
+            )
+        if self.archetype == "story":
+            return (
+                "Build a character-led narrative with a specific opening, turning point, "
+                "consequence and meaningful ending. Use varied authentic visual evidence."
+            )
+        if self.archetype == "technology":
+            return (
+                "Explain the technology through real interfaces, hardware, processes, "
+                "architecture and consequences. Keep diagrams accurate and visuals specific."
+            )
         return (
-            "Use measured documentary pacing, factual transitions, and a complete "
-            "beginning, explanation, concrete example, and satisfying conclusion."
+            "Use subject-led editorial storytelling: a distinctive opening, a purposeful "
+            "narrative progression, concrete evidence or example, and a memorable conclusion. "
+            "Avoid generic stock phrases and repeated visual layouts."
         )
 
 
@@ -99,14 +134,33 @@ def build_viral_plan(
     lower = prompt.casefold()
     if "--meme" in lower:
         archetype = "meme"
+    elif "--phonk" in lower or "--viral" in lower:
+        archetype = "phonk"
     elif mode == "cinema" or "--movie" in lower or "--cinema" in lower:
         archetype = "cinema"
+    elif (
+        re.search(r"\b(?:market|markets|forex|xauusd|dxy|cpi|nfp|fomc|breaking news)\b", lower)
+        and re.search(r"\b(?:today|aaj|latest|current|update|overview|outlook|session|news|calendar|right now|daily)\b", lower)
+    ):
+        archetype = "newsroom"
+    elif re.search(r"\b(?:product|brand|campaign|advertisement|ad film|launch)\b", lower):
+        archetype = "commercial"
+    elif re.search(r"\b(?:tutorial|how to|guide|learn|explain|lesson)\b", lower):
+        archetype = "explainer"
+    elif re.search(r"\b(?:travel|destination|journey|city tour)\b", lower):
+        archetype = "travel"
+    elif re.search(r"\b(?:biography|true story|history|founder story)\b", lower):
+        archetype = "story"
+    elif re.search(r"\b(?:technology|software|ai|robot|science|coding)\b", lower):
+        archetype = "technology"
     else:
-        archetype = "phonk"
+        archetype = "editorial"
 
     fast_cuts = archetype in {"phonk", "meme"}
-    scene_count = max(10, min(14, round(duration_sec / 2.7))) if fast_cuts else max(
-        8, min(14, round(duration_sec / 22))
+    scene_count = (
+        max(10, min(14, round(duration_sec / 2.7)))
+        if fast_cuts
+        else max(7, min(12, round(duration_sec / 4.5)))
     )
     return ViralPlan(
         archetype=archetype,

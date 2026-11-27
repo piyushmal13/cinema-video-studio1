@@ -4,6 +4,7 @@ import html
 import json
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -28,6 +29,18 @@ if __package__:
     from .research_director import route_production_request
     from .media_cache import MediaAssetCache
     from .setup_real_audio import SFX_VARIANTS, ensure_audio_assets
+    from .creative_director import (
+        build_creative_direction,
+        choose_video_scene_indexes,
+        classify_topic,
+        diversify_scenes,
+        stable_visual_seed,
+    )
+    from .comfyui_client import generate_from_environment
+    from .speech_alignment import align_with_whisperx
+    from .timeline_export import export_otio
+    from .visual_quality import audit_visual_plan
+    from .kokoro_tts import generate_from_environment as generate_kokoro_from_environment
 else:
     from prompt_intent import compose_story_prompt, parse_prompt_intent, validate_storyboard
     from viral_engineer import (
@@ -40,40 +53,51 @@ else:
     from research_director import route_production_request
     from media_cache import MediaAssetCache
     from setup_real_audio import SFX_VARIANTS, ensure_audio_assets
+    from creative_director import (
+        build_creative_direction,
+        choose_video_scene_indexes,
+        classify_topic,
+        diversify_scenes,
+        stable_visual_seed,
+    )
+    from comfyui_client import generate_from_environment
+    from speech_alignment import align_with_whisperx
+    from timeline_export import export_otio
+    from visual_quality import audit_visual_plan
+    from kokoro_tts import generate_from_environment as generate_kokoro_from_environment
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
+JOB_ID = os.environ.get("CINEMA_JOB_ID", "").strip() or str(time.time_ns())
 
 os.makedirs("public/media", exist_ok=True)
 os.makedirs("out", exist_ok=True)
 
-SYSTEM_PROMPT = """You are an Academy-Award-caliber film director and motion-graphics creative director.
-Given a user topic, story idea, or full script, craft a complete {target_words} production script and {scene_count_instruction} distinct scenes.
+SYSTEM_PROMPT = """You are the creative director and lead writer of a professional, subject-led video studio.
+Create a complete {target_words} spoken script and {scene_count_instruction} purposeful scenes.
 {lang_instruction}
 {style_instruction}
+{creative_direction}
 Use brandTag "{brand}", themeColor "{color}", and mode "{mode}".
 
-Treat the user's brief as the source of truth. For a topic, create a clear beginning, explanation with useful context, concrete example, and satisfying ending. For a supplied script, preserve its key facts and intended meaning; do not replace it with a generic summary. Explain technical ideas in plain language, avoid filler, and do not invent statistics, quotations, or claims. Keep the narration complete enough for the requested runtime. Do not speak production settings or visual directions in the voiceover. Never insert a company name, brand name, logo, product promotion, call to action, or watermark unless the user explicitly requests it or names that brand in the current request.
-The narration MUST contain at least {min_narration_words} whitespace-separated words. This is a hard minimum, not a suggestion.
+BRIEF MODE: The user has supplied an idea or instruction, not a finished script. Understand the real request, research it when requested/current, and write original narration. Never copy the Telegram command into voiceover.
+SCRIPT MODE: When the user supplied a complete script, keep that exact script as the spoken narration. Do not paraphrase, summarise, shorten, translate or insert additional spoken words. Direct scenes and timing around it.
+Do not invent facts, prices, statistics, quotes, people, sources or outcomes. Distinguish verified facts, analysis and scenarios. Never invent market data. Never use a chart without supplied or retrieved values. No generic AI phrases, empty hype, filler, or repetitive conclusions.
+Never add a brand, logo, watermark, CTA or product promotion unless explicitly requested.
 
-Return ONLY one valid JSON object with these top-level keys:
-- "title": concise title specific to the user's brief.
-- "narration": complete spoken voiceover, with no hashtags, emojis, or stage directions.
-- "scenes": an array containing the requested number of scene objects. Every object must include:
-  "type", "weight", "kicker", "headline", "visualQuery", "cameraMotion", and "sfxCue".
-  Optional fields are "subline", "leftLabel", "rightLabel", and "barValues".
+Return ONLY one valid JSON object:
+- title: specific, concise title
+- narration: complete spoken narration
+- scenes: {scene_count_instruction} scenes, each with type, weight, kicker, headline, visualQuery (4–7 words), cameraMotion and sfxCue.
+- Optional: subline, statValue, bullets (up to 4), leftLabel, rightLabel, barValues (source-backed only), mediaMode ("video", "image", or "graphic").
 
-Do not copy generic sample content. Every title, scene label, headline, visual query,
-and optional detail must be specific to the user's request. Never invent statistics:
-only include chart values when the user supplied them or clearly label them as hypothetical.
+Available scene types: cinema_hero, three_d_globe, three_d_bars, candlestick_chart, split_compare, step_list, cinema_outro, kinetic_type, process_diagram, editorial_montage, data_viz.
+Use a different purposeful visual subject and shot family for every scene. Consecutive scenes must not repeat the same visual query, composition or treatment.
+cameraMotion: zoom_in, zoom_out, pan_left, pan_right, dolly_push.
+sfxCue: boom, whoosh, riser, pulse.
+Weights must be positive. Data must be grounded. Illustrative visuals must be clearly labelled illustrative.
+Narration minimum for brief mode: {min_narration_words} words. In script mode, the supplied script overrides this length target."""
 
-Available scene types: "cinema_hero", "three_d_globe", "three_d_bars", "candlestick_chart", "split_compare", "step_list", "cinema_outro".
-Rules:
-1. Every scene MUST include a vivid 4-to-7 word English "visualQuery".
-2. Choose "cameraMotion" from: "zoom_in", "zoom_out", "pan_left", "pan_right", "dolly_push".
-3. Choose "sfxCue" from: "boom", "whoosh", "pulse".
-4. Weights must be positive and sum to 1.0.
-5. Build a clear beginning, middle, and ending across the scene sequence."""
 
 def clean_json_response(raw_text: str) -> dict:
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text.strip(), flags=re.MULTILINE)
@@ -92,123 +116,324 @@ def build_fallback_storyboard(
     is_hinglish: bool,
     min_words: int = 60,
 ) -> dict:
+    """Topic-aware degraded storyboard; never repeats a fixed sample film."""
     latest_request = re.search(
         r"Latest request:\s*(.*?)(?:\n\n|$)", prompt, re.IGNORECASE | re.DOTALL
     )
-    brief = latest_request.group(1) if latest_request else prompt.split("\n\n", 1)[0]
-    brief = re.sub(r"/(?:video|movie|cinema|reel)(?:@\w+)?", " ", brief, flags=re.IGNORECASE)
-    brief = re.sub(r"--[\w=-]+", " ", brief)
-    brief = re.sub(
-        r"^\s*(?:please\s+)?(?:explain|create|make|write|generate|produce|show|tell me about)\s+",
-        "",
-        brief,
-        flags=re.IGNORECASE,
-    )
-    brief = re.sub(
-        r"^\s*(?:how|why|what|a|an|the|short|viral|video|film|reel|about|on)\s+",
-        "",
-        brief,
-        flags=re.IGNORECASE,
-    )
-    brief = re.sub(r"\b\d+(?:\.\d+)?[\s-]*(?:seconds?|secs?|minutes?|mins?)\b", " ", brief, flags=re.IGNORECASE)
-    topic_words = re.findall(r"[\w'-]+", brief, flags=re.UNICODE)[:8]
-    topic = " ".join(topic_words) or "the core idea"
+    brief = latest_request.group(1) if latest_request else prompt
+    brief = re.sub(r"\s+", " ", brief).strip()
+    ignored = {
+        "a", "an", "and", "the", "for", "to", "of", "in", "on", "with", "about",
+        "make", "create", "build", "generate", "produce", "video", "reel", "film",
+        "short", "vertical", "landscape", "aaj", "abhi", "pane", "hisab", "se",
+        "pura", "accha", "achha", "banao", "bana", "kar", "karo", "please",
+    }
+    topic_tokens = [
+        word for word in re.findall(r"[\w'-]+", brief, flags=re.UNICODE)
+        if word.casefold() not in ignored and len(word) > 1
+    ]
+    topic = " ".join(topic_tokens[:5]) or "the requested subject"
+    kind = classify_topic(brief)
+    rng = random.Random(stable_visual_seed(JOB_ID, 0, brief))
 
-    if is_hinglish:
-        narration_parts = [
-            f"Aaj hum {topic} ko seedhe samjhenge, bina bade claims ya shortcut ke.",
-            "Pehle core idea ko simple language mein define karein, aur facts ko assumptions se alag rakhein.",
-            "Phir process ko step by step follow karein, taaki har decision ka connection clear ho.",
-            "Ek practical example mechanism samjhata hai, bina numbers invent kiye ya outcome promise kiye.",
-            "Kisi bhi decision se pehle signal, constraint, aur trade-off ko saath mein dekhein.",
-            "Institutional edge disciplined reasoning hai: evidence check karein, alternatives compare karein, uncertainty clear rakhein.",
-            "Information badle toh conclusion ko update karein, purane view ko force na karein.",
-            "Takeaway simple hai: mechanism samjhein, assumptions test karein, aur next step soch samajh kar lein.",
+    if kind == "market_update":
+        if is_hinglish:
+            blocks = [
+                f"Aaj ka market brief {topic} par focused hai. Sabse pehle timestamp aur source ke saath available data dekhein.",
+                "Gold futures, dollar index aur Treasury yields alag instruments hain. Futures quote ko XAUUSD spot mat samjhein.",
+                "Headline ko market move se tabhi connect karein jab source aur timing dono us explanation ko support karein.",
+                "Current session ke catalysts aur upcoming economic calendar events ko clearly alag rakhein.",
+                "Bullish aur bearish scenarios conditional possibilities hain, guaranteed direction ya trade calls nahi.",
+                "Agar verified live quote available nahi hai, exact level banane ke bajaye limitation ko openly batayein.",
+            ]
+            extensions = [
+                "Intraday move ko previous close, active session aur available liquidity ke context mein samajhna zaroori hai.",
+                "USD aur yields ka direction useful context de sakta hai, lekin ek indicator akela cause prove nahi karta.",
+                "Economic release ke actual result ko consensus aur previous reading se compare karna chahiye.",
+                "Volatility ke time spread aur execution risk badal sakta hai, isliye chart ke saath conditions bhi dekhein.",
+                "News headline aur market reaction ke beech timing mismatch ho toh causal claim avoid karein.",
+                "Next update tabhi meaningful hoga jab naya data ya confirmed event market context ko badle.",
+            ]
+        else:
+            blocks = [
+                f"This market briefing focuses on {topic}. Start with only the price and event data that has a timestamp and identifiable source.",
+                "Gold futures, the dollar index and Treasury yields are different instruments. A futures quote must never be labelled as XAUUSD spot.",
+                "Connect a headline to a market move only when its source and timing support that explanation.",
+                "Separate the current session's catalysts from events that are still ahead on the economic calendar.",
+                "Bullish and bearish scenarios are conditional possibilities, not guaranteed direction or trading instructions.",
+                "When a verified live quote is unavailable, disclose the gap rather than inventing a price level.",
+            ]
+            extensions = [
+                "Compare the intraday move with the previous close, active session and available liquidity before drawing a conclusion.",
+                "Dollar and yield direction can provide useful context, but one indicator alone does not prove causation.",
+                "Compare an economic release with both consensus and its previous reading before explaining the surprise.",
+                "Volatility can change spreads and execution conditions, so market structure matters alongside the chart.",
+                "Avoid causal claims when a headline and the observed price reaction do not line up in time.",
+                "The next update matters when fresh evidence or a confirmed event changes the market context.",
+            ]
+        specs = [
+            ("cinema_hero", "MARKET OPEN", "The move that matters", "gold trading floor opening session", "dolly_push", "boom"),
+            ("editorial_montage", "PRICE CONTEXT", "Read the verified snapshot", "gold bullion macro newsroom closeup", "pan_left", "whoosh"),
+            ("data_viz", "CROSS ASSET", "Connect the market drivers", "dollar index treasury yields terminal", "zoom_in", "pulse"),
+            ("process_diagram", "CATALYSTS", "What changed the session", "economic calendar analyst desk release", "pan_right", "whoosh"),
+            ("split_compare", "SCENARIOS", "Separate fact from outlook", "bullish bearish scenario analysis desk", "zoom_out", "pulse"),
+            ("cinema_outro", "TAKEAWAY", "What deserves attention next", "financial district market close view", "dolly_push", "boom"),
         ]
-        extensions = [
-            f"{topic} ko evidence, timing, incentives, aur risk ke lens se dobara dekhein.",
-            "Jo unknown hai use clearly name karein, aur unsupported certainty se bachein.",
-            "Har alternative ko same standard se compare karein, phir conclusion ko calmly update karein.",
+    elif kind == "commercial":
+        if is_hinglish:
+            blocks = [
+                f"Yeh production {topic} ko ek real customer need ke through introduce karti hai, generic slogan ke through nahi.",
+                "Product dikhane se pehle viewer ki actual situation aur problem establish karein.",
+                "Ek real feature ko product detail, interface ya physical action se demonstrate karein.",
+                "Differentiator wahi batayein jo supplied product information support karti hai.",
+                "Ending mein requested next step dein; fake testimonial ya guarantee mat banayein.",
+            ]
+            extensions = [
+                "Abstract animation se zyada useful actual product ka clear close-up demonstration hota hai.",
+                "Feature ko us environment mein dikhayein jahan target customer use karega.",
+                "Pricing aur performance claims ko source brief ke saath exactly match karein.",
+                "Visual sequence benefit prove kare, same claim ko captions mein repeat na karein.",
+                "CTA tabhi use karein jab user ne request kiya ho ya destination diya ho.",
+                "Strong ending viewer ko ek clear next action deti hai.",
+            ]
+        else:
+            blocks = [
+                f"This production introduces {topic} through a specific audience need instead of a generic product slogan.",
+                "Show the customer's situation before introducing the product or service.",
+                "Demonstrate one real feature through a product detail, interface or physical action.",
+                "Explain the differentiator only when it is supported by supplied product information.",
+                "Close with the requested next step without inventing testimonials, outcomes or guarantees.",
+            ]
+            extensions = [
+                "A close-up demonstration is more useful than an abstract animation that never shows the actual product.",
+                "Show the feature in the environment where the intended audience would use it.",
+                "Keep any pricing, performance or compatibility detail aligned with the supplied source.",
+                "Let the visual sequence prove the benefit instead of repeating the claim in several captions.",
+                "Use a clear call to action only when the user has requested one or supplied the destination.",
+                "The strongest ending leaves the audience with one understandable next action.",
+            ]
+        specs = [
+            ("cinema_hero", "THE NEED", "Start with the real problem", "customer product use environment closeup", "dolly_push", "boom"),
+            ("editorial_montage", "THE PRODUCT", "Show the product in context", "authentic product surface macro detail", "pan_left", "whoosh"),
+            ("process_diagram", "THE DEMO", "Make the feature tangible", "real product interface interaction recording", "zoom_in", "pulse"),
+            ("split_compare", "THE DIFFERENCE", "Show the meaningful distinction", "before after product workflow comparison", "pan_right", "whoosh"),
+            ("cinema_outro", "NEXT STEP", "Close with a clear action", "product hero natural studio detail", "zoom_out", "boom"),
+        ]
+    elif kind in {"technology", "explainer"}:
+        if is_hinglish:
+            blocks = [
+                f"Yeh film {topic} ke peeche ka real problem ya question identify karti hai.",
+                "Process ko chalane wale physical ya digital components ko clearly dikhayein.",
+                "Information, materials ya decisions system mein kis order se move karte hain, samjhayen.",
+                "Ek practical example ke saath un limitations ko batayein jo result badal sakti hain.",
+                "Ending mein viewer ke liye iska real-world meaning clear karein.",
+            ]
+            extensions = [
+                "Decorative shapes se better hai actual interface ya physical demonstration dikhana.",
+                "Technical terms ko usi waqt explain karein jab viewer ko unki zaroorat ho.",
+                "System kya karne ke liye bana hai aur practically kya kar sakta hai, dono alag rakhein.",
+                "Input, process aur output dikhayein taaki cause aur effect clear ho.",
+                "Jahan method fail ho sakta hai, wahan ek counterexample use karein.",
+                "Final takeaway opening mein uthaye gaye question ka jawab de.",
+            ]
+        else:
+            blocks = [
+                f"This film investigates {topic} by identifying the real problem or question behind it.",
+                "Show the physical or digital components that make the process work.",
+                "Explain how information, materials or decisions move through the system in order.",
+                "Use one concrete example and identify the limitations that change the result.",
+                "Finish with the practical consequence for someone using or learning the technology.",
+            ]
+            extensions = [
+                "A real interface or physical demonstration is more useful than a decorative floating diagram.",
+                "Define unfamiliar terms at the moment they become necessary, not in a long opening lecture.",
+                "Separate what the system is designed to do from what it can reliably do in practice.",
+                "Show the input, the process and the output so the viewer can follow cause and effect.",
+                "Include a counterexample when it helps explain where the method stops working.",
+                "The final takeaway should answer the question raised in the opening scene.",
+            ]
+        specs = [
+            ("cinema_hero", "THE QUESTION", "What does it actually do", "real hardware lab environment", "dolly_push", "boom"),
+            ("editorial_montage", "THE COMPONENTS", "Look inside the system", "macro circuit board hands assembly", "pan_left", "whoosh"),
+            ("process_diagram", "THE MECHANISM", "Follow the information flow", "technical process schematic sequence", "zoom_in", "pulse"),
+            ("data_viz", "THE EVIDENCE", "Measure what can be measured", "software interface actual metrics display", "pan_right", "whoosh"),
+            ("split_compare", "THE LIMITS", "Understand the tradeoffs", "technology use case comparison scene", "zoom_out", "pulse"),
+            ("cinema_outro", "THE IMPACT", "Why this changes the workflow", "human using technology environment", "dolly_push", "boom"),
         ]
     else:
-        narration_parts = [
-            f"This film examines {topic} by starting with the real question, not a dramatic claim or shortcut.",
-            "First, define the core idea in plain language and separate verified details from assumptions.",
-            "Next, follow the process step by step so viewers can see how each decision connects.",
-            "A useful example makes the mechanism easier to understand without inventing numbers or promising an outcome.",
-            "Look for the signal, the constraint, and the trade-off before deciding what deserves attention.",
-            "The institutional edge is disciplined reasoning: check evidence, compare alternatives, and keep uncertainty visible.",
-            "If the information changes, revisit the conclusion instead of defending a view that no longer fits.",
-            "The takeaway is practical: understand the mechanism, test assumptions, and make the next move deliberately.",
-        ]
-        extensions = [
-            f"Revisit {topic} through evidence, timing, incentives, and risk, while naming what remains unknown.",
-            "Compare each alternative using the same standard, then update the conclusion when the evidence changes.",
-            "A careful review separates a useful signal from an assumption and keeps the next question visible.",
+        if is_hinglish:
+            blocks = [
+                f"{topic} ko samajhne ke liye pehle ek real question se shuru karein, generic introduction se nahi.",
+                f"Ek specific example dikhayein jo {topic} ko turant understandable banaye.",
+                "Important mechanism ya sequence ko natural order mein explain karein.",
+                "Ek counterpoint ya detail dikhayein jo viewer ka perspective badalti hai.",
+                "Ending mein ek practical takeaway dein jo explanation se logically nikalta hai.",
+            ]
+            extensions = [
+                "Viewer ko utna context dein jitna samajhne ke liye zaroori hai.",
+                "Main idea ko visible banane ke liye real object, action ya situation use karein.",
+                "Apni interpretation ko verified facts se clearly alag rakhein.",
+                "Ek useful counterpoint explanation ko zyada credible banata hai.",
+                "Reliable source ke bina statistics ya quotations add na karein.",
+                "Conclusion mein naya meaning dein, opening line ko repeat na karein.",
+            ]
+        else:
+            blocks = [
+                f"Start with the most interesting real question about {topic}, not a generic introduction.",
+                f"Show a specific example or scene that makes {topic} immediately understandable.",
+                "Explain the important mechanism or sequence in a natural order.",
+                "Introduce a counterpoint or detail that changes how the viewer sees the subject.",
+                "End with one practical takeaway that follows from the explanation.",
+            ]
+            extensions = [
+                "Give the viewer enough context to understand why this moment or detail matters.",
+                "Use a concrete object, action or situation to make the main idea visible.",
+                "Keep interpretation separate from details that can actually be verified.",
+                "A useful counterpoint makes the explanation more credible and less predictable.",
+                "Avoid adding statistics or quotations unless a reliable source supplied them.",
+                "The conclusion should add meaning rather than repeat the opening sentence.",
+            ]
+        specs = [
+            ("cinema_hero", "THE HOOK", "Open on a specific moment", "subject documentary establishing scene", "dolly_push", "boom"),
+            ("editorial_montage", "THE DETAIL", "Show the evidence up close", "authentic macro detail photography", "pan_left", "whoosh"),
+            ("process_diagram", "THE MECHANISM", "Make the process visible", "topic process demonstration sequence", "zoom_in", "pulse"),
+            ("data_viz", "THE CONTEXT", "Add useful supporting context", "relevant real world information display", "pan_right", "whoosh"),
+            ("split_compare", "THE COUNTERPOINT", "Show what changes the view", "contrasting real world situation", "zoom_out", "pulse"),
+            ("cinema_outro", "THE TAKEAWAY", "Finish on the practical meaning", "subject relevant human environment", "dolly_push", "boom"),
         ]
 
+    narration_parts = list(blocks)
+    for extension in extensions:
+        if len(" ".join(narration_parts).split()) >= max(35, min_words):
+            break
+        narration_parts.append(extension)
     narration = " ".join(narration_parts)
-    extension_index = 0
-    target_words = max(60, min_words)
-    while len(narration.split()) < target_words:
-        narration += " " + extensions[extension_index % len(extensions)]
-        extension_index += 1
 
-    scene_specs = [
-        ("cinema_hero", "THE QUESTION", "START WITH THE CORE IDEA", "central idea emerging through cinematic shadows", "dolly_push", "boom"),
-        ("three_d_globe", "THE CONTEXT", "CONNECT THE BIG PICTURE", "global network linking ideas across borders", "pan_left", "whoosh"),
-        ("three_d_bars", "THE MECHANISM", "FOLLOW EACH STEP", "process diagram illuminated in a dark studio", "zoom_in", "pulse"),
-        ("candlestick_chart", "THE SIGNAL", "SEPARATE SIGNAL FROM NOISE", "animated market candles crossing liquidity zones", "pan_right", "whoosh"),
-        ("split_compare", "THE TRADE-OFF", "COMPARE THE ALTERNATIVES", "two contrasting strategies under focused light", "zoom_out", "pulse"),
-        ("step_list", "THE STANDARD", "TEST THE ASSUMPTIONS", "evidence checklist beside a research notebook", "dolly_push", "whoosh"),
-        ("three_d_globe", "THE DECISION", "MAKE THE NEXT MOVE", "risk controls shaping deliberate decisions", "pan_left", "pulse"),
-        ("three_d_bars", "THE EXAMPLE", "MAKE THE MECHANISM VISIBLE", "hands reviewing evidence under studio light", "zoom_in", "pulse"),
-        ("three_d_globe", "THE TIMELINE", "FOLLOW WHAT CHANGES NEXT", "measured timeline connecting changing incentives", "pan_right", "whoosh"),
-        ("split_compare", "THE ALTERNATIVES", "WEIGH THE REAL OPTIONS", "clear decision tree among open alternatives", "dolly_push", "pulse"),
-        ("step_list", "THE IMPLICATION", "NAME THE PRACTICAL CONSEQUENCE", "research notes beside a focused market display", "pan_left", "whoosh"),
-        ("cinema_outro", "THE TAKEAWAY", "RETURN TO THE CORE IDEA", "quiet sunrise over a cinematic city skyline", "zoom_out", "boom"),
-    ]
-    scenes = [
-        {
+    topic_subject = topic.split()[:2]
+    middle_specs = list(specs[1:-1])
+    rng.shuffle(middle_specs)
+    specs = specs[:1] + middle_specs + specs[-1:]
+    scenes = []
+    for index, (scene_type, kicker, headline, visual_hint, motion, cue) in enumerate(specs):
+        query_words = topic_subject + visual_hint.split()[:5]
+        visual_query = " ".join(query_words[:7])
+        if len(visual_query.split()) < 4:
+            visual_query = " ".join((visual_query + " documentary footage closeup wide").split()[:7])
+        scenes.append({
             "type": scene_type,
             "weight": 1.0,
             "kicker": kicker,
             "headline": headline,
-            "subline": f"A focused look at {topic}." if index in {0, len(scene_specs) - 1} else "",
+            "subline": topic if index in {0, len(specs) - 1} else "",
             "visualQuery": visual_query,
             "cameraMotion": motion,
             "sfxCue": cue,
-        }
-        for index, (scene_type, kicker, headline, visual_query, motion, cue)
-        in enumerate(scene_specs)
-    ]
+            "mediaMode": "video" if index in {0, len(specs) - 1} else "image",
+        })
     return {
-        "title": f"{topic.title()} | Signal to Strategy",
+        "title": f"{topic.title()} | Studio Production",
         "brandTag": brand,
         "themeColor": color,
         "mode": mode,
         "narration": narration,
         "scenes": scenes,
+        "degradedMode": True,
     }
+
 
 
 def generate_storyboard(
     prompt: str,
     sys_prompt: str,
     min_narration_words: int,
-    brand: str = "IFXTRADES",
-    color: str = "#D4AF37",
+    brand: str = "",
+    color: str = "#A8B2C0",
     mode: str = "shorts",
     is_hinglish: bool = False,
+    variation_key: str = "",
+    script_mode: bool = False,
 ) -> dict:
-    minimum_words = max(60, min_narration_words)
-    # Primary: keyless Pollinations. Its public free tier can impose cooldowns.
+    minimum_words = max(1 if script_mode else 60, min_narration_words)
+    variation_key = variation_key or JOB_ID
+    variation_instruction = (
+        f"\n\nCreative variation key: {variation_key}. This is a new production. "
+        "Choose a fresh narrative angle, examples, shot sequence and visual treatment. "
+        "Do not reuse a generic template or mention this key."
+    )
+    user_prompt = f"{prompt}{variation_instruction}"
+
+    # 1) Optional self-hosted Ollama brain (works in Colab or on a reachable private server).
+    ollama_base = os.environ.get("OLLAMA_BASE_URL", "").strip().rstrip("/")
+    if ollama_base:
+        model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
+        try:
+            response = requests.post(
+                f"{ollama_base}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "format": "json",
+                    "stream": False,
+                    "options": {"temperature": 0.88},
+                },
+                timeout=120,
+            )
+            response.raise_for_status()
+            raw = response.json().get("message", {}).get("content", "")
+            result = validate_storyboard(clean_json_response(raw), minimum_words)
+            result["storyboardProvider"] = f"ollama:{model}"
+            print(f"Creative director used self-hosted Ollama ({model}).")
+            return result
+        except Exception as error:
+            print(f"Ollama director unavailable; trying Gemini/Pollinations: {error}")
+
+    # 2) Prefer the configured Gemini API over the keyless generic provider.
+    if GEMINI_API_KEY and os.environ.get("PREFER_GEMINI", "1").casefold() not in {"0", "false", "no"}:
+        models = list(dict.fromkeys([
+            os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"),
+            "gemini-3.5-flash-lite",
+            "gemini-3.6-flash",
+        ]))
+        for model_id in models:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
+                response = requests.post(
+                    url,
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": GEMINI_API_KEY,
+                    },
+                    json={
+                        "systemInstruction": {"parts": [{"text": sys_prompt}]},
+                        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                        "generationConfig": {
+                            "responseMimeType": "application/json",
+                            "maxOutputTokens": 8192,
+                        },
+                    },
+                    timeout=75,
+                )
+                if response.status_code != 200:
+                    print(f"Gemini {model_id} returned HTTP {response.status_code}: {response.text[:180]}")
+                    continue
+                raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                result = validate_storyboard(clean_json_response(raw), minimum_words)
+                result["storyboardProvider"] = f"gemini:{model_id}"
+                print(f"Creative director used Gemini ({model_id}).")
+                return result
+            except Exception as error:
+                print(f"Gemini {model_id} unavailable; trying next provider: {error}")
+
+    # 3) Keyless Pollinations fallback. Every request carries a fresh creative variation key.
     pollinations_error = None
-    free_model = "openai"
-    retry_prompt = f"{prompt}\n\nRespond with valid JSON only."
+    free_model = os.environ.get("POLLINATIONS_TEXT_MODEL", "openai")
+    retry_prompt = f"{user_prompt}\n\nRespond with valid JSON only."
     for attempt in range(2):
         try:
-            resp = requests.post(
+            response = requests.post(
                 "https://text.pollinations.ai/openai",
                 headers={"Content-Type": "application/json"},
                 json={
@@ -217,84 +442,32 @@ def generate_storyboard(
                         {"role": "system", "content": sys_prompt},
                         {"role": "user", "content": retry_prompt},
                     ],
-                    "temperature": 0.5,
+                    "temperature": 0.88,
                     "max_tokens": 8192,
                     "response_format": {"type": "json_object"},
                 },
                 timeout=75,
             )
-        except Exception as e:
-            print(f"Pollinations {free_model} fallback: {e}")
-            pollinations_error = str(e)
-            if attempt == 0:
-                time.sleep(46)
-                continue
-            break
-
-        if (
-            resp.status_code == 402
-            and "FREE_LIMIT" in resp.text
-            and attempt == 0
-        ):
-            retry_after = re.search(r"retry after\s+(\d+)s", resp.text, re.IGNORECASE)
-            delay = min(int(retry_after.group(1)) + 1, 61) if retry_after else 46
-            print(f"Pollinations free limit reached; retrying after {delay}s.")
-            time.sleep(delay)
-            continue
-        if resp.status_code != 200:
-            pollinations_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
-            print(f"Pollinations {free_model} status {resp.status_code}: {resp.text[:200]}")
-            break
-
-        try:
-            raw_text = resp.json()["choices"][0]["message"]["content"]
-            storyboard = validate_storyboard(
-                clean_json_response(raw_text),
-                minimum_words,
+            if response.status_code != 200:
+                pollinations_error = f"HTTP {response.status_code}: {response.text[:180]}"
+                print(f"Pollinations status {response.status_code}; moving to fallback.")
+                break
+            raw = response.json()["choices"][0]["message"]["content"]
+            result = validate_storyboard(clean_json_response(raw), minimum_words)
+            result["storyboardProvider"] = f"pollinations:{free_model}"
+            print(f"Creative director used keyless Pollinations ({free_model}).")
+            return result
+        except Exception as error:
+            pollinations_error = str(error)
+            print(f"Pollinations storyboard attempt {attempt + 1} failed: {error}")
+            retry_prompt = (
+                f"{user_prompt}\n\nThe last response failed validation. Return a fresh, "
+                f"complete JSON object with at least {minimum_words} narration words and "
+                "visually distinct, topic-specific scenes. Do not shorten the narration."
             )
-            print(f"Directed with Pollinations Free ({free_model})")
-            return storyboard
-        except (IndexError, KeyError, TypeError, ValueError) as e:
-            pollinations_error = str(e)
-            print(f"Pollinations {free_model} response rejected: {e}")
-            if attempt == 0:
-                retry_prompt = (
-                    f"{prompt}\n\nThe previous response was rejected: {e}. "
-                    f"Return a complete corrected JSON object. The narration must "
-                    f"contain at least {minimum_words} words and include "
-                    "between 3 and 14 complete scenes. Do not shorten it."
-                )
-                time.sleep(46)
 
-    if GEMINI_API_KEY:
-        for model_id in ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
-                resp = requests.post(
-                    url,
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-goog-api-key": GEMINI_API_KEY,
-                    },
-                    json={
-                        "contents": [{"parts": [{"text": f"{sys_prompt}\n\nUser request: {prompt}"}]}],
-                        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.5},
-                    },
-                    timeout=60,
-                )
-                if resp.status_code == 200:
-                    raw_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    print(f"Directed with Gemini fallback ({model_id})")
-                    return validate_storyboard(
-                        clean_json_response(raw_text),
-                        minimum_words,
-                    )
-                print(f"Gemini {model_id} status {resp.status_code}: {resp.text[:200]}")
-            except Exception as e:
-                print(f"Gemini {model_id} error: {e}")
-
-    detail = f" Pollinations error: {pollinations_error}" if pollinations_error else ""
-    print(f"AI storyboard providers unavailable; using deterministic fallback.{detail}")
+    detail = f" Provider diagnostic: {pollinations_error}" if pollinations_error else ""
+    print(f"All AI storyboard providers unavailable; using explicit degraded fallback.{detail}")
     fallback = build_fallback_storyboard(
         prompt,
         brand,
@@ -303,7 +476,9 @@ def generate_storyboard(
         is_hinglish,
         min_words=minimum_words,
     )
-    return validate_storyboard(fallback, minimum_words)
+    return validate_storyboard(fallback, 1 if script_mode else min(35, minimum_words))
+
+
 
 
 _GRADIO_VIDEO_SCRIPT = r"""
@@ -396,23 +571,47 @@ def try_generate_ai_video_clip(
     orientation: str,
     out_mp4: str,
 ) -> bool:
-    if idx not in {0, 2}:
+    if os.environ.get("CINEMA_OFFLINE") == "1":
         return False
     cache = MediaAssetCache()
-    cached = cache.get(prompt, orientation, expected_kind="video")
+    cached = cache.get(
+        prompt, orientation, expected_kind="video", variation=JOB_ID
+    )
     if cached:
         cached_path, _ = cached
         os.makedirs(os.path.dirname(out_mp4) or ".", exist_ok=True)
         shutil.copyfile(cached_path, out_mp4)
-        print(f"Using cached motion clip for scene {idx}.")
-        return True
+        print(f"Using this production's cached motion clip for scene {idx}.")
+        return _is_valid_mp4(out_mp4)
 
-    deadline = time.monotonic() + 45
+    os.makedirs(os.path.dirname(out_mp4) or ".", exist_ok=True)
+
+    # First use an optional user-configured ComfyUI workflow. It may run on Colab,
+    # a self-hosted GPU or another reachable machine; it is never assumed to exist.
+    try:
+        comfy_outputs = generate_from_environment(
+            prompt,
+            os.path.dirname(out_mp4) or "public/media",
+            media_kind="video",
+            seed=stable_visual_seed(JOB_ID, idx, prompt),
+        )
+        for candidate in comfy_outputs:
+            if candidate.suffix.lower() == ".mp4" and _is_valid_mp4(str(candidate)):
+                shutil.copyfile(candidate, out_mp4)
+                if _is_valid_mp4(out_mp4):
+                    cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
+                    print(f"Generated scene {idx} motion with configured ComfyUI.")
+                    return True
+    except Exception as error:
+        print(f"Optional ComfyUI video route unavailable for scene {idx}: {error}")
+
+    deadline = time.monotonic() + max(15, int(os.environ.get("CINEMA_VIDEO_CLIP_TIMEOUT", "45")))
     width, height = (832, 480) if orientation == "landscape" else (480, 832)
-    encoded_prompt = urllib.parse.quote(
-        f"{prompt}, cinematic camera motion, coherent subject movement, no text",
-        safe="",
+    video_prompt = (
+        f"{prompt}, topic-specific documentary cinematography, "
+        "coherent physical movement, natural camera motion, no text, no watermark"
     )
+    encoded_prompt = urllib.parse.quote(video_prompt, safe="")
     model = os.environ.get("CINEMA_POLLINATIONS_VIDEO_MODEL", "wan")
     video_url = (
         f"https://video.pollinations.ai/prompt/{encoded_prompt}"
@@ -423,14 +622,13 @@ def try_generate_ai_video_clip(
         response = requests.get(
             video_url,
             headers={"Accept": "video/mp4"},
-            timeout=(4, min(15, max(1, deadline - time.monotonic()))),
+            timeout=(4, min(18, max(1, deadline - time.monotonic()))),
         )
         if response.status_code == 200 and len(response.content) <= 80_000_000:
-            os.makedirs(os.path.dirname(out_mp4) or ".", exist_ok=True)
             with open(out_mp4, "wb") as output_file:
                 output_file.write(response.content)
             if _is_valid_mp4(out_mp4):
-                cache.store(prompt, orientation, out_mp4, "video")
+                cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
                 print(f"Generated scene {idx} video with Pollinations.")
                 return True
         print(f"Pollinations video unavailable for scene {idx}: HTTP {response.status_code}.")
@@ -445,17 +643,9 @@ def try_generate_ai_video_clip(
     try:
         result = subprocess.run(
             [
-                sys.executable,
-                "-c",
-                _GRADIO_VIDEO_SCRIPT,
-                os.environ.get(
-                    "CINEMA_LTX_SPACE",
-                    "Lightricks/ltx-video-distilled",
-                ),
-                prompt,
-                str(width),
-                str(height),
-                out_mp4,
+                sys.executable, "-c", _GRADIO_VIDEO_SCRIPT,
+                os.environ.get("CINEMA_LTX_SPACE", "Lightricks/ltx-video-distilled"),
+                video_prompt, str(width), str(height), out_mp4,
                 str(max(1, int(remaining))),
             ],
             check=False,
@@ -470,7 +660,7 @@ def try_generate_ai_video_clip(
         return False
 
     if result.returncode == 0 and _is_valid_mp4(out_mp4):
-        cache.store(prompt, orientation, out_mp4, "video")
+        cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
         print(f"Generated scene {idx} video with Hugging Face ZeroGPU.")
         return True
     if os.path.isfile(out_mp4):
@@ -746,6 +936,25 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
     if try_wikimedia_video(query, idx, orientation, clip_path):
         return f"media/scene_{idx}_stock.mp4", "video"
 
+    # Optional ComfyUI still-image workflow can run on an existing GPU worker.
+    try:
+        comfy_outputs = generate_from_environment(
+            query,
+            "public/media",
+            media_kind="image",
+            seed=stable_visual_seed(JOB_ID, idx, query),
+        )
+        for candidate in comfy_outputs:
+            if candidate.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"} and candidate.is_file():
+                relative_path = f"media/scene_{idx}_comfy{candidate.suffix.lower()}"
+                destination = os.path.join("public", relative_path.replace("/", os.sep))
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+                shutil.copyfile(candidate, destination)
+                print(f"Generated scene {idx} still with configured ComfyUI.")
+                return relative_path, "image"
+    except Exception as error:
+        print(f"Optional ComfyUI image route unavailable for scene {idx}: {error}")
+
     try:
         width, height = (1280, 720) if orientation == "landscape" else (768, 1344)
         subjects = ", ".join(_visual_subject_terms(query))
@@ -753,14 +962,14 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
             f"Photorealistic documentary cinematography of exactly {subjects}; "
             f"the visible subject must directly match {subjects}. {query}. "
             "Natural photographic detail, physically plausible light, real camera optics, "
-            "high contrast obsidian and warm gold grade. NEGATIVE: NO anime, NO cartoon, "
+            "use a scene-specific natural grade appropriate to the subject. NEGATIVE: NO anime, NO cartoon, "
             "NO illustration, NO random portrait, NO text, NO watermark, NO logo, "
             "NO collage, NO clip-art, NO unrelated subject."
         )
         encoded_prompt = urllib.parse.quote(locked_prompt, safe="")
         image_url = (
             f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-            f"?width={width}&height={height}&model=flux&nologo=true&seed={idx + 101}"
+            f"?width={width}&height={height}&model=flux&nologo=true&seed={stable_visual_seed(JOB_ID, idx, query)}"
         )
         response = requests.get(image_url, timeout=(5, 20))
         content_type = response.headers.get("Content-Type", "").lower()
@@ -793,7 +1002,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
         return "", "none"
 
     cache = MediaAssetCache()
-    cached = cache.get(query, orientation)
+    cached = cache.get(query, orientation, variation=JOB_ID)
     if cached:
         cached_path, media_kind = cached
         relative_path = f"media/scene_{idx}_cached{cached_path.suffix}"
@@ -810,7 +1019,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
     )
     if media_kind != "none" and relative_path:
         source = os.path.join("public", relative_path.replace("/", os.sep))
-        cache.store(query, orientation, source, media_kind)
+        cache.store(query, orientation, source, media_kind, variation=JOB_ID)
     return relative_path, media_kind
 
 
@@ -1164,6 +1373,17 @@ async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
     os.makedirs(os.path.dirname(out_mp3) or ".", exist_ok=True)
     edge_errors = []
 
+    try:
+        kokoro_result = generate_kokoro_from_environment(
+            cleaned_text,
+            out_mp3,
+            language="hi" if voice.startswith("hi-IN-") else "en",
+        )
+        if kokoro_result is not None:
+            return kokoro_result
+    except Exception as error:
+        print(f"Optional Kokoro TTS route failed; continuing with Edge TTS: {error}")
+
     for candidate_voice in voices:
         if os.path.exists(temporary_path):
             os.remove(temporary_path)
@@ -1234,11 +1454,6 @@ async def synthesize_voice_and_timings(text: str, voice: str, out_mp3: str):
 def main():
     offline_mode = os.environ.get("CINEMA_OFFLINE") == "1"
     trending_context = ""
-    if not offline_mode and re.search(r"(?<!\S)--trending(?!\S)", RAW_PROMPT, re.IGNORECASE):
-        try:
-            trending_context = fetch_trending_context()
-        except requests.RequestException as error:
-            print(f"Google Trends context unavailable; continuing without it: {error}")
 
     route = route_production_request(
         RAW_PROMPT,
@@ -1246,28 +1461,54 @@ def main():
         research_enabled=not offline_mode,
     )
     if route.research_context:
-        trending_context = "\n".join(
-            part for part in (trending_context, route.research_context) if part
-        )
+        trending_context = route.research_context
+    if not offline_mode and re.search(r"(?<!\S)--trending(?!\S)", RAW_PROMPT, re.IGNORECASE):
+        try:
+            extra_trends = fetch_trending_context()
+            trending_context = "\n".join(part for part in (trending_context, extra_trends) if part)
+        except requests.RequestException as error:
+            print(f"Google Trends context unavailable; continuing without it: {error}")
+
     intent = parse_prompt_intent(
         strip_viral_flags(route.prompt),
         route.format_hint,
     )
     orientation = intent.format
+    subject_text = intent.script_text if intent.input_mode == "script" else intent.prompt
+    topic_kind = classify_topic(subject_text)
+    is_hinglish = intent.voice.startswith("hi-IN-")
+    creative_direction = build_creative_direction(
+        subject_text,
+        topic_kind=topic_kind,
+        input_mode=intent.input_mode,
+        production_style={
+            "market_update": "newsroom_editorial",
+            "commercial": "cinematic_commercial",
+            "explainer": "visual_explainer",
+            "travel": "documentary_travel",
+            "story": "character_led_story",
+            "technology": "technical_documentary",
+            "general": "subject_led_editorial",
+        }.get(topic_kind, "subject_led_editorial"),
+        seed=JOB_ID,
+        research_context=trending_context,
+    )
+
     viral_plan = build_viral_plan(
         route.prompt,
         intent.mode,
         intent.duration_sec,
         trending_context=trending_context,
     )
-    scene_count_instruction = "10 to 14" if viral_plan.fast_cuts else "8 to 14"
+    scene_count_instruction = f"exactly {viral_plan.scene_count}"
 
     sys_prompt = SYSTEM_PROMPT.format(
         target_words=intent.target_words,
-        min_narration_words=max(60, intent.min_narration_words),
+        min_narration_words=max(30, intent.min_narration_words),
         scene_count_instruction=scene_count_instruction,
         lang_instruction=intent.lang_instruction,
         style_instruction=viral_plan.system_instruction,
+        creative_direction=creative_direction,
         brand=intent.brand,
         color=intent.color,
         mode=intent.mode,
@@ -1283,30 +1524,49 @@ def main():
         prompt_context = "\n".join(
             part for part in (prompt_context, trending_context) if part
         )
+
+    latest_brief = intent.script_text if intent.input_mode == "script" else intent.prompt
     full_prompt = enhance_story_prompt(
-        compose_story_prompt(intent.prompt, prompt_context),
+        compose_story_prompt(latest_brief, prompt_context),
         viral_plan,
     )
+    full_prompt += (
+        "\n\nCURRENT PRODUCTION: " + JOB_ID
+        + "\nINPUT MODE: " + intent.input_mode
+        + "\nTOPIC CLASS: " + topic_kind
+        + "\nUse a fresh angle and distinct shots for this production."
+    )
+
     if offline_mode:
         storyboard = build_fallback_storyboard(
             full_prompt,
             intent.brand,
             intent.color,
             intent.mode,
-            intent.voice.startswith(("hi-IN-", "en-IN-")),
-            min_words=intent.min_narration_words,
+            is_hinglish,
+            min_words=1 if intent.input_mode == "script" else intent.min_narration_words,
         )
     else:
         storyboard = generate_storyboard(
             full_prompt,
             sys_prompt,
-            intent.min_narration_words,
+            1 if intent.input_mode == "script" else intent.min_narration_words,
             brand=intent.brand,
             color=intent.color,
             mode=intent.mode,
-            is_hinglish=intent.voice.startswith(("hi-IN-", "en-IN-")),
+            is_hinglish=is_hinglish,
+            variation_key=JOB_ID,
+            script_mode=intent.input_mode == "script",
         )
-    narration = sanitize_narration(storyboard["narration"])
+
+    # A user-supplied script is the canonical voiceover. The model only directs its visuals.
+    narration_source = (
+        intent.script_text if intent.input_mode == "script" else storyboard["narration"]
+    )
+    narration = sanitize_narration(narration_source)
+    scenes = diversify_scenes(storyboard.get("scenes", []))
+    if not scenes:
+        raise RuntimeError("Creative director returned no usable scenes.")
 
     if offline_mode:
         words, total_duration = synthesize_offline_voice_and_timings(
@@ -1320,34 +1580,56 @@ def main():
             "public/voiceover.mp3", words
         )
 
-    scenes = storyboard.get("scenes", [])
-    total_weight = sum(s["weight"] for s in scenes)
+        language_code = "hi" if is_hinglish else "en"
+        aligned_words = align_with_whisperx(
+            "public/voiceover.mp3",
+            narration,
+            language=language_code,
+        )
+        if aligned_words:
+            words = aligned_words
+
+    total_weight = sum(float(scene.get("weight", 1.0)) for scene in scenes)
     cursor = 0.0
     timed_scenes = []
+    video_scene_indexes = choose_video_scene_indexes(
+        scenes,
+        max_clips=max(0, min(8, int(os.environ.get("CINEMA_MAX_VIDEO_CLIPS", "3")))),
+    )
 
-    for idx, s in enumerate(scenes):
-        dur = (
+    for idx, scene in enumerate(scenes):
+        duration = (
             total_duration / len(scenes)
             if viral_plan.fast_cuts
-            else (s.get("weight", 1.0) / total_weight) * total_duration
+            else (float(scene.get("weight", 1.0)) / max(total_weight, 1e-6)) * total_duration
         )
-        s["startSec"] = round(cursor, 2)
-        cursor = total_duration if idx == len(scenes) - 1 else cursor + dur
-        s["endSec"] = round(cursor, 2)
+        scene["startSec"] = round(cursor, 2)
+        cursor = total_duration if idx == len(scenes) - 1 else cursor + duration
+        scene["endSec"] = round(cursor, 2)
 
-        q = s["visualQuery"]
+        query = str(scene.get("visualQuery", "")).strip()
         clip_path = f"public/media/scene_{idx}.mp4"
-        if (
+        generated_video = (
             not offline_mode
-            and idx in {0, 2}
-            and try_generate_ai_video_clip(q, idx, orientation, clip_path)
-        ):
+            and idx in video_scene_indexes
+            and scene.get("mediaMode") not in {"still", "graphic"}
+            and try_generate_ai_video_clip(query, idx, orientation, clip_path)
+        )
+        if generated_video:
             media_file, media_kind = f"media/scene_{idx}.mp4", "video"
         else:
-            media_file, media_kind = fetch_broll_or_ai_visual(q, idx, orientation)
-        s["mediaFile"] = media_file
-        s["mediaKind"] = media_kind
-        timed_scenes.append(s)
+            media_file, media_kind = fetch_broll_or_ai_visual(query, idx, orientation)
+
+        scene["mediaFile"] = media_file
+        scene["mediaKind"] = media_kind
+        scene["visualSeed"] = stable_visual_seed(JOB_ID, idx, query)
+        timed_scenes.append(scene)
+
+    # Visual audit is diagnostic: a weak asset is reported instead of being disguised as success.
+    visual_report = audit_visual_plan(timed_scenes, "public")
+    if visual_report.get("warnings"):
+        for warning in visual_report["warnings"]:
+            print(f"VISUAL QA WARNING: {warning}")
 
     synthesize_ambient_cinema_score(
         total_duration,
@@ -1369,12 +1651,21 @@ def main():
         timed_scenes,
         total_duration,
     )
+
     output = {
         "title": storyboard.get("title", "Cinema AI Video"),
+        "narration": narration,
         "brandTag": intent.brand,
         "themeColor": intent.color,
         "mode": intent.mode,
         "viralMode": viral_plan.archetype,
+        "topicKind": topic_kind,
+        "inputMode": intent.input_mode,
+        "jobId": JOB_ID,
+        "storyboardProvider": storyboard.get("storyboardProvider", "topic-aware-fallback"),
+        "degradedMode": bool(storyboard.get("degradedMode", False)),
+        "researchContext": trending_context,
+        "visualQuality": visual_report,
         "beatSync": viral_plan.beat_sync,
         "beatTimestamps": beat_timestamps,
         "format": intent.format,
@@ -1389,12 +1680,21 @@ def main():
         "sfxPopFile": "sfx_pop.mp3",
         "sfxFiles": SFX_VARIANTS,
     }
-    with open("public/video_data.json", "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2)
+    with open("public/video_data.json", "w", encoding="utf-8") as output_file:
+        json.dump(output, output_file, indent=2)
+
+    if os.environ.get("OTIO_EXPORT_ENABLED", "").casefold() in {"1", "true", "yes"}:
+        try:
+            if export_otio(output, "out/final.otio"):
+                print("Exported OpenTimelineIO edit timeline to out/final.otio.")
+        except Exception as error:
+            print(f"Optional OpenTimelineIO export unavailable: {error}")
 
     print(
         f"Mastered {total_duration:.2f}s {intent.mode} film | "
-        f"Scenes: {len(timed_scenes)} | Words: {len(words)}"
+        f"Topic: {topic_kind} | Input: {intent.input_mode} | "
+        f"Scenes: {len(timed_scenes)} | AI video attempts: {len(video_scene_indexes)} | "
+        f"Words: {len(words)} | Provider: {output['storyboardProvider']}"
     )
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import unicodedata
 from pathlib import Path
 
 
-_MEDIA_CACHE_VERSION = "v1"
+_MEDIA_CACHE_VERSION = "v2"  # Job-scoped variants prevent cross-video visual repetition.
 _MAX_CACHE_BYTES = 512 * 1024 * 1024
 _MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 _EXTENSIONS = {
@@ -25,11 +25,17 @@ class MediaAssetCache:
         )
 
     @staticmethod
-    def _key(query: str, orientation: str) -> str:
+    def _key(query: str, orientation: str, variation: str = "") -> str:
         normalized_query = " ".join(
             unicodedata.normalize("NFKC", query).casefold().split()
         )
-        identity = f"{_MEDIA_CACHE_VERSION}\0{orientation}\0{normalized_query}"
+        normalized_variation = " ".join(
+            unicodedata.normalize("NFKC", variation).casefold().split()
+        )
+        identity = (
+            f"{_MEDIA_CACHE_VERSION}\0{orientation}\0{normalized_query}"
+            f"\0{normalized_variation}"
+        )
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -58,8 +64,9 @@ class MediaAssetCache:
         query: str,
         orientation: str,
         expected_kind: str | None = None,
+        variation: str = "",
     ) -> tuple[Path, str] | None:
-        key = self._key(query, orientation)
+        key = self._key(query, orientation, variation)
         kinds = (expected_kind,) if expected_kind else ("video", "image")
         now = time.time()
         for kind in kinds:
@@ -82,6 +89,7 @@ class MediaAssetCache:
         orientation: str,
         source: str | Path,
         kind: str,
+        variation: str = "",
     ) -> Path | None:
         source_path = Path(source)
         if kind not in _EXTENSIONS or self._asset_kind(source_path) != kind:
@@ -93,7 +101,7 @@ class MediaAssetCache:
             return None
 
         self.root.mkdir(parents=True, exist_ok=True)
-        destination = self.root / f"{self._key(query, orientation)}{extension}"
+        destination = self.root / f"{self._key(query, orientation, variation)}{extension}"
         shutil.copyfile(source_path, destination)
         self._prune()
         return destination

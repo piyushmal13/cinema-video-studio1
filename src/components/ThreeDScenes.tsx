@@ -122,30 +122,11 @@ export const ThreeDBarChartScene: React.FC<{
   const { width } = useVideoConfig();
   const canvasW = Math.min(width - 100, 820);
   const hasData = Boolean(bars && bars.length > 0);
-  const chartBars = bars?.length
-    ? bars
-    : Array.from({ length: 6 }, (_, index) => ({
-        label: String(index + 1).padStart(2, '0'),
-        value: 35 + ((sceneIndex * 23 + index * 29) % 64),
-      }));
+  if (!hasData) return null;
+  const chartBars = bars ?? [];
 
   return (
     <div style={{ width: canvasW, height: 390, margin: '14px auto 0 auto', position: 'relative' }}>
-      {!hasData && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 8,
-            left: 18,
-            zIndex: 2,
-            color: '#CBD5E1',
-            font: '700 13px "JetBrains Mono", monospace',
-            letterSpacing: '0.12em',
-          }}
-        >
-          ILLUSTRATIVE FORM · NOT LIVE DATA
-        </div>
-      )}
       <ThreeCanvas width={canvasW} height={390} camera={{ fov: 44, position: [0, 0.8, 5.2] }}>
         <ambientLight intensity={0.75} />
         <directionalLight position={[4, 7, 5]} intensity={2.5} color="#FFFFFF" />
@@ -176,8 +157,10 @@ export const ThreeDScenes: React.FC<{
     return <ThreeDOrbitalScene color={themeColor} sceneIndex={sceneIndex} />;
   }
 
-  if (sceneType === 'three_d_bars') {
-    return <ThreeDBarChartScene bars={barValues} color={themeColor} sceneIndex={sceneIndex} />;
+  if (sceneType === 'three_d_bars' || sceneType === 'data_viz') {
+    return barValues?.length
+      ? <ThreeDBarChartScene bars={barValues} color={themeColor} sceneIndex={sceneIndex} />
+      : null;
   }
 
   return null;

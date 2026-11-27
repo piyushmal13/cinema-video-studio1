@@ -1,0 +1,10 @@
+# Optional integrations. Do not install these in the default GitHub Actions pipeline.
+# WhisperX adds PyTorch/ASR alignment dependencies and is best installed in a GPU worker.
+whisperx>=3.3,<4
+
+# OpenTimelineIO enables NLE-compatible .otio timeline exports.
+opentimelineio>=0.17,<1
+
+# Kokoro is an optional local neural TTS path; its voice/model weights have separate terms.
+kokoro-onnx>=0.4,<1
+onnxruntime>=1.18,<2

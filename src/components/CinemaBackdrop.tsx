@@ -20,6 +20,10 @@ const sceneAccentColors: Record<SceneType, string> = {
   split_compare: '#FB7185',
   step_list: '#22D3EE',
   cinema_outro: '#FBBF24',
+  kinetic_type: '#E2E8F0',
+  process_diagram: '#22C55E',
+  editorial_montage: '#94A3B8',
+  data_viz: '#60A5FA',
 };
 
 export const CinemaBackdrop: React.FC<{
