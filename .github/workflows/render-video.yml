@@ -94,6 +94,7 @@ jobs:
           CINEMA_VIDEO_CLIP_TIMEOUT: '45'
           PREFER_GEMINI: '1'
           CINEMA_BRAND_PROFILE: 'IFXTRADES'
+          CINEMA_RESEARCH_ALL_IFX: '1'
         run: |
           if [ -f out/reference_style.json ]; then
             export PROMPT_CONTEXT="$(python scripts/reference_context.py --report out/reference_style.json --existing "$PROMPT_CONTEXT")"
