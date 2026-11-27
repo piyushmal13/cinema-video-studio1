@@ -160,5 +160,30 @@ class PromptIntentTests(unittest.TestCase):
             )
 
 
+    def test_variation_key_prevents_cross_production_asset_reuse(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "first.jpg"
+            second = root / "second.jpg"
+            first.write_bytes(b"\\xff\\xd8" + b"a" * 6000)
+            second.write_bytes(b"\\xff\\xd8" + b"b" * 6000)
+            cache = MediaAssetCache(root / "cache")
+            cache.store("gold bars in a vault", "vertical", first, "image", variation="job-1")
+            cache.store("gold bars in a vault", "vertical", second, "image", variation="job-2")
+
+            hit_one = cache.get(
+                "gold bars in a vault", "vertical", expected_kind="image", variation="job-1"
+            )
+            hit_two = cache.get(
+                "gold bars in a vault", "vertical", expected_kind="image", variation="job-2"
+            )
+            no_cross_hit = cache.get(
+                "gold bars in a vault", "vertical", expected_kind="image", variation="job-3"
+            )
+
+        self.assertEqual(hit_one[0].read_bytes(), first.read_bytes())
+        self.assertEqual(hit_two[0].read_bytes(), second.read_bytes())
+        self.assertIsNone(no_cross_hit)
+
 if __name__ == "__main__":
     unittest.main()
