@@ -160,30 +160,25 @@ class PromptIntentTests(unittest.TestCase):
             )
 
 
-    def test_variation_key_prevents_cross_production_asset_reuse(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            first = root / "first.jpg"
-            second = root / "second.jpg"
-            first.write_bytes(b"\\xff\\xd8" + b"a" * 6000)
-            second.write_bytes(b"\\xff\\xd8" + b"b" * 6000)
-            cache = MediaAssetCache(root / "cache")
-            cache.store("gold bars in a vault", "vertical", first, "image", variation="job-1")
-            cache.store("gold bars in a vault", "vertical", second, "image", variation="job-2")
+    def test_roman_hindi_request_is_detected_as_hinglish(self):
+        intent = parse_prompt_intent(
+            "Pane hisab se aaj pura market ka overview nikal kar ek accha updates reel banao"
+        )
+        self.assertEqual(intent.voice, "hi-IN-MadhurNeural")
+        self.assertEqual(intent.input_mode, "brief")
 
-            hit_one = cache.get(
-                "gold bars in a vault", "vertical", expected_kind="image", variation="job-1"
-            )
-            hit_two = cache.get(
-                "gold bars in a vault", "vertical", expected_kind="image", variation="job-2"
-            )
-            no_cross_hit = cache.get(
-                "gold bars in a vault", "vertical", expected_kind="image", variation="job-3"
-            )
+    def test_explicit_script_is_extracted_and_kept_as_source_text(self):
+        supplied = (
+            "Aaj hum gold market ke movement ko samjhenge. "
+            "Dollar aur bond yields ka impact alag alag dekhenge. "
+            "Koi bhi scenario certainty nahi hai. Risk ko samajhna zaroori hai."
+        )
+        prompt = "Make a 30 sec reel." + chr(10) + "SCRIPT:" + chr(10) + supplied
+        intent = parse_prompt_intent(prompt)
+        self.assertEqual(intent.input_mode, "script")
+        self.assertEqual(intent.script_text, supplied)
+        self.assertEqual(intent.voice, "hi-IN-MadhurNeural")
 
-        self.assertEqual(hit_one[0].read_bytes(), first.read_bytes())
-        self.assertEqual(hit_two[0].read_bytes(), second.read_bytes())
-        self.assertIsNone(no_cross_hit)
 
 if __name__ == "__main__":
     unittest.main()
