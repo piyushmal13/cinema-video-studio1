@@ -8,6 +8,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+try:
+    from .visual_quality import audit_render
+except ImportError:
+    from visual_quality import audit_render
+
 
 HASHTAGS = {
     "market_update": ["#MarketUpdate", "#GoldMarket", "#ForexMarkets", "#MacroNews"],
@@ -65,12 +70,25 @@ def build_social_package(data: dict[str, Any]) -> dict[str, Any]:
 
     source_text = _safe_text(data.get("researchContext"))
     source_urls = list(dict.fromkeys(re.findall(r"https?://[^\s,)]+", source_text)))[:10]
+    source_suffix = ("\\n\\nSources: " + " ".join(source_urls)) if source_urls else ""
+    youtube_description = (description + source_suffix).strip()
+    if notes:
+        youtube_description += "\\n\\n" + "\\n".join(notes)
+    platform_copy = {
+        "instagram_reels": caption,
+        "youtube_shorts": {
+            "title": title[:100],
+            "description": youtube_description[:5000],
+        },
+        "tiktok": (title + "\\n\\n" + " ".join(hashtags))[:2200],
+    }
     return {
         "title": title,
         "description": description,
         "caption": caption,
         "hashtags": hashtags,
         "platform": ["Instagram Reels", "YouTube Shorts", "TikTok"],
+        "platform_copy": platform_copy,
         "aspect_ratio": format_name,
         "topic_kind": kind,
         "brand": _safe_text(data.get("brandTag")),
@@ -122,8 +140,15 @@ def run(video_path: str | Path, data_path: str | Path, output_dir: str | Path) -
     output = Path(output_dir)
     if not video.is_file() or not video.stat().st_size:
         raise FileNotFoundError(f"Rendered MP4 is missing: {video}")
+    render_quality = audit_render(video)
+    if not render_quality.get("passed"):
+        raise RuntimeError(
+            "Rendered MP4 failed delivery QA: "
+            + "; ".join(render_quality.get("errors", []))
+        )
     data = json.loads(video_data_path.read_text(encoding="utf-8"))
     package = build_social_package(data)
+    package["render_quality"] = render_quality
     output.mkdir(parents=True, exist_ok=True)
     (output / "social_caption.md").write_text(
         f"# {package['title']}\n\n{package['description']}\n\n"
@@ -136,6 +161,7 @@ def run(video_path: str | Path, data_path: str | Path, output_dir: str | Path) -
         package["cover"] = str(cover_path)
     else:
         package["cover"] = None
+    package["render_quality"] = render_quality
     (output / "social_package.json").write_text(
         json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8"
     )
