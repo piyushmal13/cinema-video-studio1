@@ -119,3 +119,18 @@ Optional tools:
 - See [docs/VIDEO_MODEL_AND_COMPUTE_MATRIX_2026.md](docs/VIDEO_MODEL_AND_COMPUTE_MATRIX_2026.md) for current model, licence and free-compute trade-offs.
 
 This is a coarse admission gate, not a guarantee that a model will load or render successfully. Exact model revisions and workflows still require a benchmark.
+
+
+## Reference-driven editing (new foundation)
+
+The studio now includes an offline reference analyzer for user-supplied local videos and images:
+
+\`\`\`bash
+python scripts/reference_analyzer.py --video /data/reference.mp4 --images /data/product.jpg --crop-to vertical
+\`\`\`
+
+It extracts video format and shot-cut timing, creates a bounded frame contact sheet, inspects image dimensions, optionally asks a configured local Ollama vision model for a semantic description, and produces \`out/reference_style.json\`. It can smart-crop supplied images without stretching them. Set \`CINEMA_VISION_MODEL\` (for example, a locally installed vision model) to enable image descriptions; the default endpoint is local Ollama at \`127.0.0.1:11434\`.
+
+The crop fallback uses image contrast/entropy as a focal-point heuristic; it is not semantic understanding and must not be treated as face/object detection. For production, use semantic subject and OCR/logo protection, generate crop previews and allow manual focal-point overrides. A social reel URL is a style reference only: this tool does not scrape, download or reproduce the creator's content.
+
+See [docs/REFERENCE_DRIVEN_EDITING_AND_ORCHESTRATION.md](docs/REFERENCE_DRIVEN_EDITING_AND_ORCHESTRATION.md) for the intended reference workflow, safe integration steps and the Dagu/Kestra/Temporal decision. An optional Dagu DAG starter is in \`orchestration/dagu/\`. Dagu has not been installed on a remote VPS or benchmarked at runtime by this code change.
