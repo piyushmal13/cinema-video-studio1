@@ -50,8 +50,8 @@ class MediaAssetCacheTests(unittest.TestCase):
             root = Path(temp_dir)
             first = root / "first.jpg"
             second = root / "second.jpg"
-            first.write_bytes(b"\\xff\\xd8" + b"a" * 6000)
-            second.write_bytes(b"\\xff\\xd8" + b"b" * 6000)
+            first.write_bytes(bytes([255, 216]) + b"a" * 6000)
+            second.write_bytes(bytes([255, 216]) + b"b" * 6000)
             cache = MediaAssetCache(root / "cache")
             cache.store("gold bars in a vault", "vertical", first, "image", variation="job-1")
             cache.store("gold bars in a vault", "vertical", second, "image", variation="job-2")
