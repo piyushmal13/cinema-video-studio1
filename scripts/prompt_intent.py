@@ -2,6 +2,11 @@ import math
 import re
 from dataclasses import dataclass
 
+try:
+    from .creative_director import infer_creative_intent
+except ImportError:
+    from creative_director import infer_creative_intent
+
 
 @dataclass(frozen=True)
 class PromptIntent:
@@ -15,6 +20,8 @@ class PromptIntent:
     lang_instruction: str
     brand: str
     color: str
+    input_mode: str = "brief"
+    script_text: str = ""
 
 
 def _requested_duration(prompt: str):
@@ -46,6 +53,7 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
 
     original = prompt.strip()
     lower = original.lower()
+    creative_intent = infer_creative_intent(original)
     movie_command = bool(re.match(r"^/(?:movie|cinema)(?:@\w+)?\b", lower))
     is_landscape = bool(
         movie_command
@@ -74,10 +82,10 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
     default_duration = 75 if video_format == "landscape" else 45
     duration_sec = _requested_duration(original) or default_duration
 
-    if re.search(r"\bhinglish\b", lower):
+    if re.search(r"\bhinglish\b", lower) or creative_intent.language == "Hinglish":
         language = "Hinglish"
         voice = "hi-IN-MadhurNeural"
-    elif re.search(r"\bhindi\b", lower):
+    elif re.search(r"\bhindi\b", lower) or creative_intent.language == "Hindi":
         language = "Hindi"
         voice = "hi-IN-MadhurNeural"
     else:
@@ -166,6 +174,8 @@ def parse_prompt_intent(prompt: str, format_hint: str = "vertical") -> PromptInt
         ),
         brand=brand,
         color=color,
+        input_mode=creative_intent.input_mode,
+        script_text=creative_intent.script_text,
     )
 
 
