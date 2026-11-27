@@ -244,7 +244,7 @@ const SceneCardOverlay: React.FC<{
               gap: 12,
               width: '100%',
               marginTop: 6,
-              textAlign: 'left',
+              textAlign: 'center',
             }}
           >
             {scene.bullets.slice(0, 4).map((bullet, index) => (
