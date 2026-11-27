@@ -82,7 +82,7 @@ const SubtitleOverlay: React.FC<{
             fontWeight: current ? 900 : 700,
             letterSpacing: ticker ? '0.01em' : '0.015em',
             textTransform: ticker ? 'none' : 'uppercase',
-            color: current ? '#FFFFFF' : '#E2E8F0',
+            color: current ? themeColor : '#E2E8F0',
             background: 'rgba(3,7,13,0.84)',
             padding: '3px 7px',
             borderBottom: documentary && current ? `2px solid ${themeColor}` : 'none',
