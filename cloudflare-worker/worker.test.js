@@ -160,3 +160,67 @@ test("rejects oversized prompts and allows standalone work without memory bindin
   assert.equal(JSON.parse(calls[1].body).client_payload.prompt_context, "");
   assert.match(JSON.parse(calls[2].body).text, /memory is not configured/i);
 });
+
+
+test("dispatches Telegram photo references with their file metadata", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: init?.body });
+    return new Response(null, { status: String(url).includes("dispatches") ? 204 : 200 });
+  };
+  const response = await worker.fetch(
+    makeRequest({
+      chat: { id: 123 },
+      photo: [
+        { file_id: "small-photo", file_unique_id: "small", file_size: 1000 },
+        { file_id: "large-photo", file_unique_id: "large", file_size: 5000 },
+      ],
+      caption: "/reel Create a premium product reel",
+    }),
+    makeEnv()
+  );
+  assert.equal(response.status, 200);
+  const dispatch = JSON.parse(calls[0].body);
+  assert.equal(dispatch.client_payload.reference_file_id, "large-photo");
+  assert.equal(dispatch.client_payload.reference_kind, "image");
+  assert.equal(dispatch.client_payload.reference_mime_type, "image/jpeg");
+  assert.equal(dispatch.client_payload.text, "Create a premium product reel");
+});
+
+test("accepts a reference video without caption and supplies a style-only brief", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: init?.body });
+    return new Response(null, { status: String(url).includes("dispatches") ? 204 : 200 });
+  };
+  const response = await worker.fetch(
+    makeRequest({
+      chat: { id: 123 },
+      video: { file_id: "reference-video", file_unique_id: "v1", file_size: 900000, mime_type: "video/mp4" },
+    }),
+    makeEnv()
+  );
+  assert.equal(response.status, 200);
+  const dispatch = JSON.parse(calls[0].body);
+  assert.equal(dispatch.client_payload.reference_kind, "video");
+  assert.match(dispatch.client_payload.text, /editing rhythm/i);
+});
+
+test("rejects unsupported and oversized reference attachments", async () => {
+  const messages = [];
+  globalThis.fetch = async (url, init) => {
+    messages.push(JSON.parse(init.body));
+    return new Response(null, { status: 200 });
+  };
+  const unsupported = await worker.fetch(
+    makeRequest({ chat: { id: 123 }, document: { file_id: "zip", mime_type: "application/zip" }, caption: "make a video" }),
+    makeEnv()
+  );
+  assert.equal(unsupported.status, 400);
+  const oversized = await worker.fetch(
+    makeRequest({ chat: { id: 123 }, video: { file_id: "big", file_size: 21 * 1024 * 1024, mime_type: "video/mp4" }, caption: "make a video" }),
+    makeEnv()
+  );
+  assert.equal(oversized.status, 415);
+  assert.match(messages.at(-1).text, /20 MB/i);
+});
