@@ -110,5 +110,23 @@ class ResearchDirectorTests(unittest.TestCase):
         self.assertFalse(route.documentary)
         self.assertEqual(route.format_hint, "vertical")
 
+    def test_generic_ifx_research_mode_fetches_public_research_leads(self):
+        from unittest.mock import patch
+        from scripts.research_director import route_production_request
+        with patch.dict("os.environ", {"CINEMA_RESEARCH_ALL_IFX": "1"}):
+            with patch("scripts.research_director.fetch_live_research", return_value="Research lead: example source"):
+                route = route_production_request("Explain how gold spreads work", research_enabled=True)
+        self.assertIn("Research lead", route.research_context)
+
+    def test_generic_research_remains_off_when_profile_flag_is_absent(self):
+        from unittest.mock import patch
+        from scripts.research_director import route_production_request
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("scripts.research_director.fetch_live_research") as research:
+                route = route_production_request("Explain how gold spreads work", research_enabled=True)
+        research.assert_not_called()
+        self.assertEqual(route.research_context, "")
+
+
 if __name__ == "__main__":
     unittest.main()
