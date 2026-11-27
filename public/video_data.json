@@ -1,7 +1,7 @@
 {
   "title": "Cinema AI Studio Preview",
-  "brandTag": "IFXTRADES",
-  "themeColor": "#D4AF37",
+  "brandTag": "",
+  "themeColor": "#A8B2C0",
   "mode": "cinema",
   "totalDurationSec": 12.0,
   "scenes": [
@@ -37,7 +37,7 @@
       "type": "cinema_outro",
       "startSec": 9.2,
       "endSec": 12.0,
-      "kicker": "IFXTRADES",
+      "kicker": "STUDIO PREVIEW",
       "headline": "Trade With Institutional Precision",
       "subline": "Automated intelligence built for modern markets",
       "cameraMotion": "zoom_out",
