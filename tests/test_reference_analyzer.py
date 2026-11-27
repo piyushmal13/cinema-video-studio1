@@ -7,6 +7,7 @@ from scripts.reference_analyzer import (
     build_style_brief,
     probe_video,
     smart_crop_image,
+    prepare_reference_images,
 )
 
 
@@ -42,6 +43,26 @@ class ReferenceAnalyzerTests(unittest.TestCase):
             with Image.open(output) as fitted:
                 self.assertEqual(fitted.size, (360, 640))
             self.assertEqual(result["focal_point"], [0.7, 0.5])
+
+
+    def test_user_reference_image_is_assigned_to_a_scene_and_fitted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                from PIL import Image
+            except ImportError:
+                self.skipTest("Pillow optional dependency is not installed")
+            root = Path(directory)
+            source = root / "reference.png"
+            Image.new("RGB", (800, 1200), (30, 40, 50)).save(source)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({"kind": "image", "path": str(source)}), encoding="utf-8")
+            scenes = [
+                {"headline": "Opening scene", "visualQuery": "city skyline"},
+                {"headline": "Product detail", "visualQuery": "closeup product packaging"},
+            ]
+            assigned = prepare_reference_images(scenes, manifest, "vertical", root / "public")
+            self.assertEqual(assigned, {0: "media/user_reference_01.jpg"})
+            self.assertTrue((root / "public" / "media" / "user_reference_01.jpg").is_file())
 
 
 if __name__ == "__main__":
