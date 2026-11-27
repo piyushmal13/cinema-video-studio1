@@ -27,7 +27,8 @@ const Headline: React.FC<{
   align?: 'left' | 'center' | 'right';
   uppercase?: boolean;
   color?: string;
-}> = ({ children, size, align = 'left', uppercase = false, color = '#F8FAFC' }) => (
+  accentColor?: string;
+}> = ({ children, size, align = 'left', uppercase = false, color = '#F8FAFC', accentColor = '#D4AF37' }) => (
   <h1 style={{
     fontFamily: '"Montserrat", "Arial Black", system-ui, sans-serif',
     fontSize: size,
@@ -44,7 +45,7 @@ const Headline: React.FC<{
     textShadow: '0 5px 24px rgba(0,0,0,0.78)',
     margin: 0,
   }}>
-    <span style={{ color }}>{children.trim().split(/\s+/)[0]}</span>{' '}{children.trim().split(/\s+/).slice(1).join(' ')}
+    <span style={{ color: accentColor }}>{children.trim().split(/\s+/)[0]}</span>{' '}{children.trim().split(/\s+/).slice(1).join(' ')}
   </h1>
 );
 
@@ -133,7 +134,7 @@ export const SceneDirector: React.FC<Props> = ({
     isLandscape ? 34 : 30,
     Math.round(titleSize * Math.min(1, Math.pow(32 / Math.max(1, titleLength), 0.42))),
   );
-  const titleNode = <Headline size={fittedTitleSize}>{title}</Headline>;
+  const titleNode = <Headline accentColor={themeColor} size={fittedTitleSize}>{title}</Headline>;
   const sublineNode = <Subline size={smallSize}>{subline}</Subline>;
 
   if (treatment === 'kinetic_typography') {
