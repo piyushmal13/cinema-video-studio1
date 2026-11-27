@@ -97,13 +97,13 @@ const SceneCardOverlay: React.FC<{
   const translateY =
     scene.type === 'cinema_hero' ? 0 : Math.max(0, 18 - frame * 1.5);
   const layout =
-    scene.type === 'cinema_hero'
+    scene.type === 'cinema_hero' || scene.type === 'kinetic_type'
       ? 'hero'
-      : scene.type === 'step_list'
+      : scene.type === 'step_list' || scene.type === 'process_diagram'
         ? 'steps'
         : scene.type === 'cinema_outro'
           ? 'outro'
-          : scene.type === 'three_d_globe' || sceneIndex % 2 === 1
+          : scene.type === 'three_d_globe' || scene.type === 'editorial_montage' || scene.type === 'data_viz' || sceneIndex % 2 === 1
             ? 'editorial'
             : 'glass';
   const headlineSize =
@@ -227,7 +227,7 @@ const SceneCardOverlay: React.FC<{
           </p>
         )}
 
-        {scene.type === 'step_list' && scene.bullets && scene.bullets.length > 0 && (
+        {(scene.type === 'step_list' || scene.type === 'process_diagram') && scene.bullets && scene.bullets.length > 0 && (
           <div
             style={{
               display: 'grid',
