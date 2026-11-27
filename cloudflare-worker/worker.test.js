@@ -216,7 +216,7 @@ test("rejects unsupported and oversized reference attachments", async () => {
     makeRequest({ chat: { id: 123 }, document: { file_id: "zip", mime_type: "application/zip" }, caption: "make a video" }),
     makeEnv()
   );
-  assert.equal(unsupported.status, 400);
+  assert.equal(unsupported.status, 415);
   const oversized = await worker.fetch(
     makeRequest({ chat: { id: 123 }, video: { file_id: "big", file_size: 21 * 1024 * 1024, mime_type: "video/mp4" }, caption: "make a video" }),
     makeEnv()
