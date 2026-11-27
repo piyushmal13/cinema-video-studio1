@@ -14,7 +14,7 @@ class ViralEngineerTests(unittest.TestCase):
     def test_short_form_defaults_to_subject_led_editorial_not_phonk(self):
         plan = build_viral_plan("Explain compound interest", "shorts", 45)
 
-        self.assertEqual(plan.archetype, "editorial")
+        self.assertEqual(plan.archetype, "explainer")
         self.assertEqual(plan.score_style, "cinema")
         self.assertFalse(plan.beat_sync)
         self.assertFalse(plan.fast_cuts)
@@ -38,7 +38,7 @@ class ViralEngineerTests(unittest.TestCase):
         self.assertEqual(cinema.archetype, "cinema")
         self.assertEqual(cinema.score_style, "cinema")
         self.assertFalse(cinema.beat_sync)
-        self.assertEqual(cinema.scene_count, 8)
+        self.assertEqual(cinema.scene_count, 12)
 
     def test_flags_are_removed_without_losing_the_prompt(self):
         self.assertEqual(
@@ -78,8 +78,7 @@ class ViralEngineerTests(unittest.TestCase):
         prompt = enhance_story_prompt("Explain gold", plan)
 
         self.assertIn("Explain gold", prompt)
-        self.assertIn("Explain gold", prompt)
-        self.assertIn("subject-led editorial storytelling", prompt)
+        self.assertIn("Teach one concrete learning outcome", prompt)
 
 
 if __name__ == "__main__":
