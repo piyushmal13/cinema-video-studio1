@@ -28,7 +28,8 @@ const Headline: React.FC<{
   uppercase?: boolean;
   color?: string;
   accentColor?: string;
-}> = ({ children, size, align = 'left', uppercase = false, color = '#F8FAFC', accentColor = '#D4AF37' }) => (
+  fontFamily?: string;
+}> = ({ children, size, align = 'left', uppercase = false, color = '#F8FAFC', accentColor = '#D4AF37', fontFamily = '\"Montserrat\", \"Arial Black\", system-ui, sans-serif' }) => (
   <h1 style={{
     fontFamily: '"Montserrat", "Arial Black", system-ui, sans-serif',
     fontSize: size,
@@ -107,6 +108,12 @@ export const SceneDirector: React.FC<Props> = ({
   const frame = useCurrentFrame();
   const { height, width, fps } = useVideoConfig();
   const treatment = scene.visualTreatment || 'documentary_lower_third';
+  const displayFontFamily =
+    treatment === 'editorial_cover'
+      ? '"Noto Serif", Georgia, serif'
+      : treatment === 'photo_essay' || treatment === 'immersive_photo' || treatment === 'documentary_lower_third'
+        ? 'Lato, "Noto Sans", sans-serif'
+        : '"Montserrat", "Arial Black", system-ui, sans-serif';
   const enter = interpolate(frame, [0, Math.max(6, fps * 0.55)], [0, 1], {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
   });
@@ -134,7 +141,7 @@ export const SceneDirector: React.FC<Props> = ({
     isLandscape ? 34 : 30,
     Math.round(titleSize * Math.min(1, Math.pow(32 / Math.max(1, titleLength), 0.42))),
   );
-  const titleNode = <Headline accentColor={themeColor} size={fittedTitleSize}>{title}</Headline>;
+  const titleNode = <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={fittedTitleSize}>{title}</Headline>;
   const sublineNode = <Subline size={smallSize}>{subline}</Subline>;
 
   if (treatment === 'kinetic_typography') {
@@ -144,7 +151,7 @@ export const SceneDirector: React.FC<Props> = ({
     return <AbsoluteFill style={{ ...textBase, justifyContent: 'center', alignItems: 'center', padding: '12%' }}>
       <div style={{ width: '100%', maxWidth, transform: `scale(${scale})`, textAlign: 'center' }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={Math.max(42, Math.min(isLandscape ? 104 : 86, height * 0.072, fittedTitleSize * 1.22))} align="center" uppercase>{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(42, Math.min(isLandscape ? 104 : 86, height * 0.072, fittedTitleSize * 1.22))} align="center" uppercase>{title}</Headline>
         <div style={{ width: '22%', height: 4, margin: '28px auto 0', background: themeColor }} />
         <div style={{ textAlign: 'center' }}><Subline size={smallSize}>{subline}</Subline></div>
       </div>
@@ -194,7 +201,7 @@ export const SceneDirector: React.FC<Props> = ({
     }}>
       <div style={{ maxWidth, width: '100%', margin: '0 auto' }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={Math.max(34, Math.min(68, height * 0.045))}>{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(34, Math.min(68, height * 0.045))}>{title}</Headline>
         <div style={{
           display: 'flex', flexDirection: isLandscape ? 'row' : 'column',
           gap: 12, marginTop: 24,
@@ -265,7 +272,7 @@ export const SceneDirector: React.FC<Props> = ({
       <div style={{ maxWidth: maxWidth * 0.9 }}>
         <div style={{ width: 70, height: 2, background: themeColor, margin: '0 auto 28px' }} />
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={Math.max(42, Math.min(90, height * 0.065))} align="center">{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(42, Math.min(90, height * 0.065))} align="center">{title}</Headline>
         <div style={{ width: 130, height: 1, background: 'rgba(255,255,255,0.42)', margin: '26px auto' }} />
         <div style={{ textAlign: 'center' }}><Subline size={smallSize}>{subline}</Subline></div>
       </div>
@@ -303,7 +310,7 @@ export const SceneDirector: React.FC<Props> = ({
     }}>
       <div style={{ maxWidth: maxWidth * 0.92, borderLeft: `5px solid ${themeColor}`, paddingLeft: 22 }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={Math.max(34, Math.min(76, height * 0.058, fittedTitleSize * 1.12))} uppercase>{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(34, Math.min(76, height * 0.058, fittedTitleSize * 1.12))} uppercase>{title}</Headline>
         <Subline size={smallSize}>{subline}</Subline>
       </div>
     </AbsoluteFill>;
@@ -316,7 +323,7 @@ export const SceneDirector: React.FC<Props> = ({
     }}>
       <div style={{ maxWidth: maxWidth * 0.88 }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={titleSize} uppercase>{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={titleSize} uppercase>{title}</Headline>
         <Subline size={smallSize}>{subline}</Subline>
       </div>
     </AbsoluteFill>;
@@ -329,7 +336,7 @@ export const SceneDirector: React.FC<Props> = ({
     }}>
       <div style={{ width: '100%', maxWidth: maxWidth * 0.7 }}>
         {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-        <Headline size={Math.max(34, Math.min(62, height * 0.043))}>{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(34, Math.min(62, height * 0.043))}>{title}</Headline>
         <Subline size={smallSize}>{subline}</Subline>
       </div>
     </AbsoluteFill>;
@@ -345,7 +352,7 @@ export const SceneDirector: React.FC<Props> = ({
         padding: '4px 0 4px 18px',
       }}>
         {kicker && <Kicker color={themeColor} muted>{kicker}</Kicker>}
-        <Headline size={Math.max(30, Math.min(58, height * 0.04))}>{title}</Headline>
+        <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(30, Math.min(58, height * 0.04))}>{title}</Headline>
         <Subline size={smallSize}>{subline}</Subline>
       </div>
     </AbsoluteFill>;
@@ -362,7 +369,7 @@ export const SceneDirector: React.FC<Props> = ({
       background: 'linear-gradient(90deg,rgba(4,8,14,0.68),transparent)',
     }}>
       {kicker && <Kicker color={themeColor}>{kicker}</Kicker>}
-      <Headline size={Math.max(34, Math.min(66, height * 0.047))}>{title}</Headline>
+      <Headline accentColor={themeColor} fontFamily={displayFontFamily} size={Math.max(34, Math.min(66, height * 0.047))}>{title}</Headline>
       <Subline size={smallSize}>{subline}</Subline>
     </div>
   </AbsoluteFill>;
