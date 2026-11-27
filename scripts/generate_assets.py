@@ -114,104 +114,209 @@ def build_fallback_storyboard(
     is_hinglish: bool,
     min_words: int = 60,
 ) -> dict:
-    """Topic-aware degraded-mode fallback; never reuses the old fixed 12-scene film."""
+    """Topic-aware degraded storyboard; never repeats a fixed sample film."""
     latest_request = re.search(
         r"Latest request:\s*(.*?)(?:\n\n|$)", prompt, re.IGNORECASE | re.DOTALL
     )
     brief = latest_request.group(1) if latest_request else prompt
     brief = re.sub(r"\s+", " ", brief).strip()
-    topic = " ".join(re.findall(r"[\w'-]+", brief, flags=re.UNICODE)[:10]) or "the requested subject"
+    ignored = {
+        "a", "an", "and", "the", "for", "to", "of", "in", "on", "with", "about",
+        "make", "create", "build", "generate", "produce", "video", "reel", "film",
+        "short", "vertical", "landscape", "aaj", "abhi", "pane", "hisab", "se",
+        "pura", "accha", "achha", "banao", "bana", "kar", "karo", "please",
+    }
+    topic_tokens = [
+        word for word in re.findall(r"[\w'-]+", brief, flags=re.UNICODE)
+        if word.casefold() not in ignored and len(word) > 1
+    ]
+    topic = " ".join(topic_tokens[:5]) or "the requested subject"
     kind = classify_topic(brief)
     rng = random.Random(stable_visual_seed(JOB_ID, 0, brief))
 
     if kind == "market_update":
-        blocks = [
-            f"Aaj ka market brief {topic} par focused hai. Sabse pehle sirf wahi price aur event data dekhein jiska timestamp aur source available hai.",
-            "Gold futures, dollar index aur yields ko alag instruments samjhein. Futures quote ko XAUUSD spot kehna sahi nahi hoga.",
-            "Headline ko market move se connect karein, lekin sirf tab jab source aur timing us connection ko support kare.",
-            "Aaj ke session mein important catalyst aur upcoming calendar event ko clearly alag rakhein.",
-            "Possible scenarios ko certainty ki tarah nahi, conditional analysis ki tarah explain karein.",
-            "Agar reliable live quote available nahi hai, exact level invent karne ke bajaye us limitation ko clearly batayein.",
-        ] if is_hinglish else [
-            f"This market briefing focuses on {topic}. Begin with only the price and event data for which a timestamp and source are available.",
-            "Keep gold futures, the dollar index and Treasury yields distinct. A futures quote must never be presented as XAUUSD spot.",
-            "Connect a headline to a market move only when the source and timing support that relationship.",
-            "Separate the current session's main catalysts from events still ahead on the economic calendar.",
-            "Present possible scenarios conditionally, not as certain outcomes or trading instructions.",
-            "When a reliable live quote is unavailable, disclose the gap instead of inventing a price level.",
-        ]
+        if is_hinglish:
+            blocks = [
+                f"Aaj ka market brief {topic} par focused hai. Sabse pehle timestamp aur source ke saath available data dekhein.",
+                "Gold futures, dollar index aur Treasury yields alag instruments hain. Futures quote ko XAUUSD spot mat samjhein.",
+                "Headline ko market move se tabhi connect karein jab source aur timing dono us explanation ko support karein.",
+                "Current session ke catalysts aur upcoming economic calendar events ko clearly alag rakhein.",
+                "Bullish aur bearish scenarios conditional possibilities hain, guaranteed direction ya trade calls nahi.",
+                "Agar verified live quote available nahi hai, exact level banane ke bajaye limitation ko openly batayein.",
+            ]
+            extensions = [
+                "Intraday move ko previous close, active session aur available liquidity ke context mein samajhna zaroori hai.",
+                "USD aur yields ka direction useful context de sakta hai, lekin ek indicator akela cause prove nahi karta.",
+                "Economic release ke actual result ko consensus aur previous reading se compare karna chahiye.",
+                "Volatility ke time spread aur execution risk badal sakta hai, isliye chart ke saath conditions bhi dekhein.",
+                "News headline aur market reaction ke beech timing mismatch ho toh causal claim avoid karein.",
+                "Next update tabhi meaningful hoga jab naya data ya confirmed event market context ko badle.",
+            ]
+        else:
+            blocks = [
+                f"This market briefing focuses on {topic}. Start with only the price and event data that has a timestamp and identifiable source.",
+                "Gold futures, the dollar index and Treasury yields are different instruments. A futures quote must never be labelled as XAUUSD spot.",
+                "Connect a headline to a market move only when its source and timing support that explanation.",
+                "Separate the current session's catalysts from events that are still ahead on the economic calendar.",
+                "Bullish and bearish scenarios are conditional possibilities, not guaranteed direction or trading instructions.",
+                "When a verified live quote is unavailable, disclose the gap rather than inventing a price level.",
+            ]
+            extensions = [
+                "Compare the intraday move with the previous close, active session and available liquidity before drawing a conclusion.",
+                "Dollar and yield direction can provide useful context, but one indicator alone does not prove causation.",
+                "Compare an economic release with both consensus and its previous reading before explaining the surprise.",
+                "Volatility can change spreads and execution conditions, so market structure matters alongside the chart.",
+                "Avoid causal claims when a headline and the observed price reaction do not line up in time.",
+                "The next update matters when fresh evidence or a confirmed event changes the market context.",
+            ]
         specs = [
-            ("cinema_hero","MARKET OPEN","The move that matters","gold market trading floor opening session","dolly_push","boom"),
-            ("editorial_montage","PRICE CONTEXT","Read the verified snapshot","gold bullion macro financial newsroom screens","pan_left","whoosh"),
-            ("data_viz","CROSS ASSET","Connect the market drivers","dollar index treasury yield terminal closeup","zoom_in","pulse"),
-            ("process_diagram","CATALYSTS","What changed the session","economic calendar release analyst workspace","pan_right","whoosh"),
-            ("split_compare","SCENARIOS","Separate fact from outlook","bullish bearish market scenario editorial desk","zoom_out","pulse"),
-            ("cinema_outro","TAKEAWAY","What deserves attention next","financial district market close cinematic view","dolly_push","boom"),
+            ("cinema_hero", "MARKET OPEN", "The move that matters", "gold trading floor opening session", "dolly_push", "boom"),
+            ("editorial_montage", "PRICE CONTEXT", "Read the verified snapshot", "gold bullion macro newsroom closeup", "pan_left", "whoosh"),
+            ("data_viz", "CROSS ASSET", "Connect the market drivers", "dollar index treasury yields terminal", "zoom_in", "pulse"),
+            ("process_diagram", "CATALYSTS", "What changed the session", "economic calendar analyst desk release", "pan_right", "whoosh"),
+            ("split_compare", "SCENARIOS", "Separate fact from outlook", "bullish bearish scenario analysis desk", "zoom_out", "pulse"),
+            ("cinema_outro", "TAKEAWAY", "What deserves attention next", "financial district market close view", "dolly_push", "boom"),
         ]
     elif kind == "commercial":
-        blocks = [
-            f"This production introduces {topic} through a real customer need rather than a generic product slogan.",
-            "Show the situation before the product appears, so the audience understands the problem.",
-            "Demonstrate the relevant feature with a real product detail, interface or action.",
-            "Explain the differentiator only when it is supported by the supplied information.",
-            "Close with the specific next step the user requested, without invented guarantees or testimonials.",
-        ]
+        if is_hinglish:
+            blocks = [
+                f"Yeh production {topic} ko ek real customer need ke through introduce karti hai, generic slogan ke through nahi.",
+                "Product dikhane se pehle viewer ki actual situation aur problem establish karein.",
+                "Ek real feature ko product detail, interface ya physical action se demonstrate karein.",
+                "Differentiator wahi batayein jo supplied product information support karti hai.",
+                "Ending mein requested next step dein; fake testimonial ya guarantee mat banayein.",
+            ]
+            extensions = [
+                "Abstract animation se zyada useful actual product ka clear close-up demonstration hota hai.",
+                "Feature ko us environment mein dikhayein jahan target customer use karega.",
+                "Pricing aur performance claims ko source brief ke saath exactly match karein.",
+                "Visual sequence benefit prove kare, same claim ko captions mein repeat na karein.",
+                "CTA tabhi use karein jab user ne request kiya ho ya destination diya ho.",
+                "Strong ending viewer ko ek clear next action deti hai.",
+            ]
+        else:
+            blocks = [
+                f"This production introduces {topic} through a specific audience need instead of a generic product slogan.",
+                "Show the customer's situation before introducing the product or service.",
+                "Demonstrate one real feature through a product detail, interface or physical action.",
+                "Explain the differentiator only when it is supported by supplied product information.",
+                "Close with the requested next step without inventing testimonials, outcomes or guarantees.",
+            ]
+            extensions = [
+                "A close-up demonstration is more useful than an abstract animation that never shows the actual product.",
+                "Show the feature in the environment where the intended audience would use it.",
+                "Keep any pricing, performance or compatibility detail aligned with the supplied source.",
+                "Let the visual sequence prove the benefit instead of repeating the claim in several captions.",
+                "Use a clear call to action only when the user has requested one or supplied the destination.",
+                "The strongest ending leaves the audience with one understandable next action.",
+            ]
         specs = [
-            ("cinema_hero","THE NEED","Start with the real problem","customer environment product use closeup","dolly_push","boom"),
-            ("editorial_montage","THE PRODUCT","Show the product in context","authentic product surface detail macro","pan_left","whoosh"),
-            ("process_diagram","THE DEMO","Make the feature tangible","real product interface interaction recording","zoom_in","pulse"),
-            ("split_compare","THE DIFFERENCE","Show the meaningful distinction","before after product workflow comparison","pan_right","whoosh"),
-            ("cinema_outro","NEXT STEP","Close with a clear action","product hero detail natural studio lighting","zoom_out","boom"),
+            ("cinema_hero", "THE NEED", "Start with the real problem", "customer product use environment closeup", "dolly_push", "boom"),
+            ("editorial_montage", "THE PRODUCT", "Show the product in context", "authentic product surface macro detail", "pan_left", "whoosh"),
+            ("process_diagram", "THE DEMO", "Make the feature tangible", "real product interface interaction recording", "zoom_in", "pulse"),
+            ("split_compare", "THE DIFFERENCE", "Show the meaningful distinction", "before after product workflow comparison", "pan_right", "whoosh"),
+            ("cinema_outro", "NEXT STEP", "Close with a clear action", "product hero natural studio detail", "zoom_out", "boom"),
         ]
-    elif kind == "technology":
-        blocks = [
-            f"This film investigates {topic} by identifying the real problem it is designed to solve.",
-            "Show the physical or digital components that make the process work.",
-            "Explain how information moves through the system, step by step.",
-            "Use a concrete example and name the limitations that matter.",
-            "Finish with the practical consequence for people using the technology.",
-        ]
+    elif kind in {"technology", "explainer"}:
+        if is_hinglish:
+            blocks = [
+                f"Yeh film {topic} ke peeche ka real problem ya question identify karti hai.",
+                "Process ko chalane wale physical ya digital components ko clearly dikhayein.",
+                "Information, materials ya decisions system mein kis order se move karte hain, samjhayen.",
+                "Ek practical example ke saath un limitations ko batayein jo result badal sakti hain.",
+                "Ending mein viewer ke liye iska real-world meaning clear karein.",
+            ]
+            extensions = [
+                "Decorative shapes se better hai actual interface ya physical demonstration dikhana.",
+                "Technical terms ko usi waqt explain karein jab viewer ko unki zaroorat ho.",
+                "System kya karne ke liye bana hai aur practically kya kar sakta hai, dono alag rakhein.",
+                "Input, process aur output dikhayein taaki cause aur effect clear ho.",
+                "Jahan method fail ho sakta hai, wahan ek counterexample use karein.",
+                "Final takeaway opening mein uthaye gaye question ka jawab de.",
+            ]
+        else:
+            blocks = [
+                f"This film investigates {topic} by identifying the real problem or question behind it.",
+                "Show the physical or digital components that make the process work.",
+                "Explain how information, materials or decisions move through the system in order.",
+                "Use one concrete example and identify the limitations that change the result.",
+                "Finish with the practical consequence for someone using or learning the technology.",
+            ]
+            extensions = [
+                "A real interface or physical demonstration is more useful than a decorative floating diagram.",
+                "Define unfamiliar terms at the moment they become necessary, not in a long opening lecture.",
+                "Separate what the system is designed to do from what it can reliably do in practice.",
+                "Show the input, the process and the output so the viewer can follow cause and effect.",
+                "Include a counterexample when it helps explain where the method stops working.",
+                "The final takeaway should answer the question raised in the opening scene.",
+            ]
         specs = [
-            ("cinema_hero","THE QUESTION","What does it actually do","real technology hardware lab environment","dolly_push","boom"),
-            ("editorial_montage","THE COMPONENTS","Look inside the system","macro circuit board hands assembly","pan_left","whoosh"),
-            ("process_diagram","THE MECHANISM","Follow the information flow","clean technical process schematic animation","zoom_in","pulse"),
-            ("data_viz","THE EVIDENCE","Measure what can be measured","real software dashboard performance metrics","pan_right","whoosh"),
-            ("split_compare","THE LIMITS","Understand the tradeoffs","technology use case limitations comparison","zoom_out","pulse"),
-            ("cinema_outro","THE IMPACT","Why this changes the workflow","human using technology authentic environment","dolly_push","boom"),
+            ("cinema_hero", "THE QUESTION", "What does it actually do", "real hardware lab environment", "dolly_push", "boom"),
+            ("editorial_montage", "THE COMPONENTS", "Look inside the system", "macro circuit board hands assembly", "pan_left", "whoosh"),
+            ("process_diagram", "THE MECHANISM", "Follow the information flow", "technical process schematic sequence", "zoom_in", "pulse"),
+            ("data_viz", "THE EVIDENCE", "Measure what can be measured", "software interface actual metrics display", "pan_right", "whoosh"),
+            ("split_compare", "THE LIMITS", "Understand the tradeoffs", "technology use case comparison scene", "zoom_out", "pulse"),
+            ("cinema_outro", "THE IMPACT", "Why this changes the workflow", "human using technology environment", "dolly_push", "boom"),
         ]
     else:
-        blocks = [
-            f"Start with the most interesting real question about {topic}, not a generic introduction.",
-            f"Show a specific example or scene that makes {topic} immediately understandable.",
-            "Explain the important mechanism or sequence in a natural order.",
-            "Introduce a counterpoint, limitation or detail that changes how the viewer sees the subject.",
-            "End with one useful takeaway that follows from the explanation.",
-        ]
+        if is_hinglish:
+            blocks = [
+                f"{topic} ko samajhne ke liye pehle ek real question se shuru karein, generic introduction se nahi.",
+                f"Ek specific example dikhayein jo {topic} ko turant understandable banaye.",
+                "Important mechanism ya sequence ko natural order mein explain karein.",
+                "Ek counterpoint ya detail dikhayein jo viewer ka perspective badalti hai.",
+                "Ending mein ek practical takeaway dein jo explanation se logically nikalta hai.",
+            ]
+            extensions = [
+                "Viewer ko utna context dein jitna samajhne ke liye zaroori hai.",
+                "Main idea ko visible banane ke liye real object, action ya situation use karein.",
+                "Apni interpretation ko verified facts se clearly alag rakhein.",
+                "Ek useful counterpoint explanation ko zyada credible banata hai.",
+                "Reliable source ke bina statistics ya quotations add na karein.",
+                "Conclusion mein naya meaning dein, opening line ko repeat na karein.",
+            ]
+        else:
+            blocks = [
+                f"Start with the most interesting real question about {topic}, not a generic introduction.",
+                f"Show a specific example or scene that makes {topic} immediately understandable.",
+                "Explain the important mechanism or sequence in a natural order.",
+                "Introduce a counterpoint or detail that changes how the viewer sees the subject.",
+                "End with one practical takeaway that follows from the explanation.",
+            ]
+            extensions = [
+                "Give the viewer enough context to understand why this moment or detail matters.",
+                "Use a concrete object, action or situation to make the main idea visible.",
+                "Keep interpretation separate from details that can actually be verified.",
+                "A useful counterpoint makes the explanation more credible and less predictable.",
+                "Avoid adding statistics or quotations unless a reliable source supplied them.",
+                "The conclusion should add meaning rather than repeat the opening sentence.",
+            ]
         specs = [
-            ("cinema_hero","THE HOOK","Open on a specific moment","subject specific documentary establishing scene","dolly_push","boom"),
-            ("editorial_montage","THE DETAIL","Show the evidence up close","authentic subject macro detail photography","pan_left","whoosh"),
-            ("process_diagram","THE MECHANISM","Make the process visible","topic specific process demonstration footage","zoom_in","pulse"),
-            ("data_viz","THE CONTEXT","Add useful supporting context","relevant real world information display","pan_right","whoosh"),
-            ("split_compare","THE COUNTERPOINT","Show what changes the view","contrasting real world situation comparison","zoom_out","pulse"),
-            ("cinema_outro","THE TAKEAWAY","Finish on the practical meaning","subject relevant human environment outro","dolly_push","boom"),
+            ("cinema_hero", "THE HOOK", "Open on a specific moment", "subject documentary establishing scene", "dolly_push", "boom"),
+            ("editorial_montage", "THE DETAIL", "Show the evidence up close", "authentic macro detail photography", "pan_left", "whoosh"),
+            ("process_diagram", "THE MECHANISM", "Make the process visible", "topic process demonstration sequence", "zoom_in", "pulse"),
+            ("data_viz", "THE CONTEXT", "Add useful supporting context", "relevant real world information display", "pan_right", "whoosh"),
+            ("split_compare", "THE COUNTERPOINT", "Show what changes the view", "contrasting real world situation", "zoom_out", "pulse"),
+            ("cinema_outro", "THE TAKEAWAY", "Finish on the practical meaning", "subject relevant human environment", "dolly_push", "boom"),
         ]
 
-    narration = " ".join(blocks)
-    while len(narration.split()) < max(35, min_words):
-        narration += " " + (blocks[len(narration.split()) % len(blocks)])
-    if is_hinglish and kind not in {"market_update"}:
-        narration = " ".join([
-            f"{topic} ko samajhne ke liye pehle real situation dekhein.",
-            "Phir uska mechanism aur practical example step by step follow karein.",
-            "Jo fact verified hai use fact rakhein, aur jo analysis hai use clearly analysis batayein.",
-            "Aakhir mein viewer ko ek useful takeaway dein, bina unsupported claims ke.",
-        ] + blocks)
+    narration_parts = list(blocks)
+    for extension in extensions:
+        if len(" ".join(narration_parts).split()) >= max(35, min_words):
+            break
+        narration_parts.append(extension)
+    narration = " ".join(narration_parts)
 
+    topic_subject = topic.split()[:2]
     middle_specs = list(specs[1:-1])
     rng.shuffle(middle_specs)
     specs = specs[:1] + middle_specs + specs[-1:]
     scenes = []
-    for index, (scene_type, kicker, headline, visual_query, motion, cue) in enumerate(specs):
+    for index, (scene_type, kicker, headline, visual_hint, motion, cue) in enumerate(specs):
+        query_words = topic_subject + visual_hint.split()[:5]
+        visual_query = " ".join(query_words[:7])
+        if len(visual_query.split()) < 4:
+            visual_query = " ".join((visual_query + " documentary footage closeup wide").split()[:7])
         scenes.append({
             "type": scene_type,
             "weight": 1.0,
@@ -232,7 +337,6 @@ def build_fallback_storyboard(
         "scenes": scenes,
         "degradedMode": True,
     }
-
 
 
 
