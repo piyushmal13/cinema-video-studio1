@@ -276,12 +276,18 @@ def reference_prompt_context(report_path: str | Path) -> str:
             subject = vision.get("subject")
             composition = vision.get("composition")
             action = vision.get("action")
+            visible_text = vision.get("visible_text")
+            crop_warnings = vision.get("crop_warnings")
             if subject:
                 cues.append(f"Supplied image subject: {subject}.")
             if composition:
                 cues.append(f"Reference composition: {composition}.")
             if action:
                 cues.append(f"Visible action: {action}.")
+            if visible_text:
+                cues.append(f"Preserve this visible text/branding: {visible_text}.")
+            if crop_warnings:
+                cues.append(f"Crop protection notes: {crop_warnings}.")
         elif image.get("orientation"):
             cues.append(f"Supplied reference image orientation: {image['orientation']}.")
     if cues:
