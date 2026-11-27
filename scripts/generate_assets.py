@@ -4,6 +4,7 @@ import html
 import json
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -28,6 +29,17 @@ if __package__:
     from .research_director import route_production_request
     from .media_cache import MediaAssetCache
     from .setup_real_audio import SFX_VARIANTS, ensure_audio_assets
+    from .creative_director import (
+        build_creative_direction,
+        choose_video_scene_indexes,
+        classify_topic,
+        diversify_scenes,
+        stable_visual_seed,
+    )
+    from .comfyui_client import generate_from_environment
+    from .speech_alignment import align_with_whisperx
+    from .timeline_export import export_otio
+    from .visual_quality import audit_visual_plan
 else:
     from prompt_intent import compose_story_prompt, parse_prompt_intent, validate_storyboard
     from viral_engineer import (
@@ -40,40 +52,51 @@ else:
     from research_director import route_production_request
     from media_cache import MediaAssetCache
     from setup_real_audio import SFX_VARIANTS, ensure_audio_assets
+    from creative_director import (
+        build_creative_direction,
+        choose_video_scene_indexes,
+        classify_topic,
+        diversify_scenes,
+        stable_visual_seed,
+    )
+    from comfyui_client import generate_from_environment
+    from speech_alignment import align_with_whisperx
+    from timeline_export import export_otio
+    from visual_quality import audit_visual_plan
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
+JOB_ID = os.environ.get("CINEMA_JOB_ID", "").strip() or str(time.time_ns())
 
 os.makedirs("public/media", exist_ok=True)
 os.makedirs("out", exist_ok=True)
 
-SYSTEM_PROMPT = """You are an Academy-Award-caliber film director and motion-graphics creative director.
-Given a user topic, story idea, or full script, craft a complete {target_words} production script and {scene_count_instruction} distinct scenes.
+SYSTEM_PROMPT = """You are the creative director and lead writer of a professional, subject-led video studio.
+Create a complete {target_words} spoken script and {scene_count_instruction} purposeful scenes.
 {lang_instruction}
 {style_instruction}
+{creative_direction}
 Use brandTag "{brand}", themeColor "{color}", and mode "{mode}".
 
-Treat the user's brief as the source of truth. For a topic, create a clear beginning, explanation with useful context, concrete example, and satisfying ending. For a supplied script, preserve its key facts and intended meaning; do not replace it with a generic summary. Explain technical ideas in plain language, avoid filler, and do not invent statistics, quotations, or claims. Keep the narration complete enough for the requested runtime. Do not speak production settings or visual directions in the voiceover. Never insert a company name, brand name, logo, product promotion, call to action, or watermark unless the user explicitly requests it or names that brand in the current request.
-The narration MUST contain at least {min_narration_words} whitespace-separated words. This is a hard minimum, not a suggestion.
+BRIEF MODE: The user has supplied an idea or instruction, not a finished script. Understand the real request, research it when requested/current, and write original narration. Never copy the Telegram command into voiceover.
+SCRIPT MODE: When the user supplied a complete script, keep that exact script as the spoken narration. Do not paraphrase, summarise, shorten, translate or insert additional spoken words. Direct scenes and timing around it.
+Do not invent facts, prices, statistics, quotes, people, sources or outcomes. Distinguish verified facts, analysis and scenarios. Never invent market data. Never use a chart without supplied or retrieved values. No generic AI phrases, empty hype, filler, or repetitive conclusions.
+Never add a brand, logo, watermark, CTA or product promotion unless explicitly requested.
 
-Return ONLY one valid JSON object with these top-level keys:
-- "title": concise title specific to the user's brief.
-- "narration": complete spoken voiceover, with no hashtags, emojis, or stage directions.
-- "scenes": an array containing the requested number of scene objects. Every object must include:
-  "type", "weight", "kicker", "headline", "visualQuery", "cameraMotion", and "sfxCue".
-  Optional fields are "subline", "leftLabel", "rightLabel", and "barValues".
+Return ONLY one valid JSON object:
+- title: specific, concise title
+- narration: complete spoken narration
+- scenes: {scene_count_instruction} scenes, each with type, weight, kicker, headline, visualQuery (4–7 words), cameraMotion and sfxCue.
+- Optional: subline, statValue, bullets (up to 4), leftLabel, rightLabel, barValues (source-backed only), mediaMode ("video", "image", or "graphic").
 
-Do not copy generic sample content. Every title, scene label, headline, visual query,
-and optional detail must be specific to the user's request. Never invent statistics:
-only include chart values when the user supplied them or clearly label them as hypothetical.
+Available scene types: cinema_hero, three_d_globe, three_d_bars, candlestick_chart, split_compare, step_list, cinema_outro, kinetic_type, process_diagram, editorial_montage, data_viz, map_scene.
+Use a different purposeful visual subject and shot family for every scene. Consecutive scenes must not repeat the same visual query, composition or treatment.
+cameraMotion: zoom_in, zoom_out, pan_left, pan_right, dolly_push.
+sfxCue: boom, whoosh, riser, pulse.
+Weights must be positive. Data must be grounded. Illustrative visuals must be clearly labelled illustrative.
+Narration minimum for brief mode: {min_narration_words} words. In script mode, the supplied script overrides this length target."""
 
-Available scene types: "cinema_hero", "three_d_globe", "three_d_bars", "candlestick_chart", "split_compare", "step_list", "cinema_outro".
-Rules:
-1. Every scene MUST include a vivid 4-to-7 word English "visualQuery".
-2. Choose "cameraMotion" from: "zoom_in", "zoom_out", "pan_left", "pan_right", "dolly_push".
-3. Choose "sfxCue" from: "boom", "whoosh", "pulse".
-4. Weights must be positive and sum to 1.0.
-5. Build a clear beginning, middle, and ending across the scene sequence."""
+"""
 
 def clean_json_response(raw_text: str) -> dict:
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text.strip(), flags=re.MULTILINE)
@@ -92,123 +115,217 @@ def build_fallback_storyboard(
     is_hinglish: bool,
     min_words: int = 60,
 ) -> dict:
+    """Topic-aware degraded-mode fallback; never reuses the old fixed 12-scene film."""
     latest_request = re.search(
-        r"Latest request:\s*(.*?)(?:\n\n|$)", prompt, re.IGNORECASE | re.DOTALL
+        r"Latest request:\\s*(.*?)(?:\\n\\n|$)", prompt, re.IGNORECASE | re.DOTALL
     )
-    brief = latest_request.group(1) if latest_request else prompt.split("\n\n", 1)[0]
-    brief = re.sub(r"/(?:video|movie|cinema|reel)(?:@\w+)?", " ", brief, flags=re.IGNORECASE)
-    brief = re.sub(r"--[\w=-]+", " ", brief)
-    brief = re.sub(
-        r"^\s*(?:please\s+)?(?:explain|create|make|write|generate|produce|show|tell me about)\s+",
-        "",
-        brief,
-        flags=re.IGNORECASE,
-    )
-    brief = re.sub(
-        r"^\s*(?:how|why|what|a|an|the|short|viral|video|film|reel|about|on)\s+",
-        "",
-        brief,
-        flags=re.IGNORECASE,
-    )
-    brief = re.sub(r"\b\d+(?:\.\d+)?[\s-]*(?:seconds?|secs?|minutes?|mins?)\b", " ", brief, flags=re.IGNORECASE)
-    topic_words = re.findall(r"[\w'-]+", brief, flags=re.UNICODE)[:8]
-    topic = " ".join(topic_words) or "the core idea"
+    brief = latest_request.group(1) if latest_request else prompt
+    brief = re.sub(r"\\s+", " ", brief).strip()
+    topic = " ".join(re.findall(r"[\\w'-]+", brief, flags=re.UNICODE)[:10]) or "the requested subject"
+    kind = classify_topic(brief)
+    rng = random.Random(stable_visual_seed(JOB_ID, 0, brief))
 
-    if is_hinglish:
-        narration_parts = [
-            f"Aaj hum {topic} ko seedhe samjhenge, bina bade claims ya shortcut ke.",
-            "Pehle core idea ko simple language mein define karein, aur facts ko assumptions se alag rakhein.",
-            "Phir process ko step by step follow karein, taaki har decision ka connection clear ho.",
-            "Ek practical example mechanism samjhata hai, bina numbers invent kiye ya outcome promise kiye.",
-            "Kisi bhi decision se pehle signal, constraint, aur trade-off ko saath mein dekhein.",
-            "Institutional edge disciplined reasoning hai: evidence check karein, alternatives compare karein, uncertainty clear rakhein.",
-            "Information badle toh conclusion ko update karein, purane view ko force na karein.",
-            "Takeaway simple hai: mechanism samjhein, assumptions test karein, aur next step soch samajh kar lein.",
+    if kind == "market_update":
+        blocks = [
+            f"Aaj ka market brief {topic} par focused hai. Sabse pehle sirf wahi price aur event data dekhein jiska timestamp aur source available hai.",
+            "Gold futures, dollar index aur yields ko alag instruments samjhein. Futures quote ko XAUUSD spot kehna sahi nahi hoga.",
+            "Headline ko market move se connect karein, lekin sirf tab jab source aur timing us connection ko support kare.",
+            "Aaj ke session mein important catalyst aur upcoming calendar event ko clearly alag rakhein.",
+            "Possible scenarios ko certainty ki tarah nahi, conditional analysis ki tarah explain karein.",
+            "Agar reliable live quote available nahi hai, exact level invent karne ke bajaye us limitation ko clearly batayein.",
+        ] if is_hinglish else [
+            f"This market briefing focuses on {topic}. Begin with only the price and event data for which a timestamp and source are available.",
+            "Keep gold futures, the dollar index and Treasury yields distinct. A futures quote must never be presented as XAUUSD spot.",
+            "Connect a headline to a market move only when the source and timing support that relationship.",
+            "Separate the current session's main catalysts from events still ahead on the economic calendar.",
+            "Present possible scenarios conditionally, not as certain outcomes or trading instructions.",
+            "When a reliable live quote is unavailable, disclose the gap instead of inventing a price level.",
         ]
-        extensions = [
-            f"{topic} ko evidence, timing, incentives, aur risk ke lens se dobara dekhein.",
-            "Jo unknown hai use clearly name karein, aur unsupported certainty se bachein.",
-            "Har alternative ko same standard se compare karein, phir conclusion ko calmly update karein.",
+        specs = [
+            ("cinema_hero","MARKET OPEN","The move that matters","gold market trading floor opening session","dolly_push","boom"),
+            ("editorial_montage","PRICE CONTEXT","Read the verified snapshot","gold bullion macro financial newsroom screens","pan_left","whoosh"),
+            ("data_viz","CROSS ASSET","Connect the market drivers","dollar index treasury yield terminal closeup","zoom_in","pulse"),
+            ("process_diagram","CATALYSTS","What changed the session","economic calendar release analyst workspace","pan_right","whoosh"),
+            ("split_compare","SCENARIOS","Separate fact from outlook","bullish bearish market scenario editorial desk","zoom_out","pulse"),
+            ("cinema_outro","TAKEAWAY","What deserves attention next","financial district market close cinematic view","dolly_push","boom"),
+        ]
+    elif kind == "commercial":
+        blocks = [
+            f"This production introduces {topic} through a real customer need rather than a generic product slogan.",
+            "Show the situation before the product appears, so the audience understands the problem.",
+            "Demonstrate the relevant feature with a real product detail, interface or action.",
+            "Explain the differentiator only when it is supported by the supplied information.",
+            "Close with the specific next step the user requested, without invented guarantees or testimonials.",
+        ]
+        specs = [
+            ("cinema_hero","THE NEED","Start with the real problem","customer environment product use closeup","dolly_push","boom"),
+            ("editorial_montage","THE PRODUCT","Show the product in context","authentic product surface detail macro","pan_left","whoosh"),
+            ("process_diagram","THE DEMO","Make the feature tangible","real product interface interaction recording","zoom_in","pulse"),
+            ("split_compare","THE DIFFERENCE","Show the meaningful distinction","before after product workflow comparison","pan_right","whoosh"),
+            ("cinema_outro","NEXT STEP","Close with a clear action","product hero detail natural studio lighting","zoom_out","boom"),
+        ]
+    elif kind == "technology":
+        blocks = [
+            f"This film investigates {topic} by identifying the real problem it is designed to solve.",
+            "Show the physical or digital components that make the process work.",
+            "Explain how information moves through the system, step by step.",
+            "Use a concrete example and name the limitations that matter.",
+            "Finish with the practical consequence for people using the technology.",
+        ]
+        specs = [
+            ("cinema_hero","THE QUESTION","What does it actually do","real technology hardware lab environment","dolly_push","boom"),
+            ("editorial_montage","THE COMPONENTS","Look inside the system","macro circuit board hands assembly","pan_left","whoosh"),
+            ("process_diagram","THE MECHANISM","Follow the information flow","clean technical process schematic animation","zoom_in","pulse"),
+            ("data_viz","THE EVIDENCE","Measure what can be measured","real software dashboard performance metrics","pan_right","whoosh"),
+            ("split_compare","THE LIMITS","Understand the tradeoffs","technology use case limitations comparison","zoom_out","pulse"),
+            ("cinema_outro","THE IMPACT","Why this changes the workflow","human using technology authentic environment","dolly_push","boom"),
         ]
     else:
-        narration_parts = [
-            f"This film examines {topic} by starting with the real question, not a dramatic claim or shortcut.",
-            "First, define the core idea in plain language and separate verified details from assumptions.",
-            "Next, follow the process step by step so viewers can see how each decision connects.",
-            "A useful example makes the mechanism easier to understand without inventing numbers or promising an outcome.",
-            "Look for the signal, the constraint, and the trade-off before deciding what deserves attention.",
-            "The institutional edge is disciplined reasoning: check evidence, compare alternatives, and keep uncertainty visible.",
-            "If the information changes, revisit the conclusion instead of defending a view that no longer fits.",
-            "The takeaway is practical: understand the mechanism, test assumptions, and make the next move deliberately.",
+        blocks = [
+            f"Start with the most interesting real question about {topic}, not a generic introduction.",
+            f"Show a specific example or scene that makes {topic} immediately understandable.",
+            "Explain the important mechanism or sequence in a natural order.",
+            "Introduce a counterpoint, limitation or detail that changes how the viewer sees the subject.",
+            "End with one useful takeaway that follows from the explanation.",
         ]
-        extensions = [
-            f"Revisit {topic} through evidence, timing, incentives, and risk, while naming what remains unknown.",
-            "Compare each alternative using the same standard, then update the conclusion when the evidence changes.",
-            "A careful review separates a useful signal from an assumption and keeps the next question visible.",
+        specs = [
+            ("cinema_hero","THE HOOK","Open on a specific moment","subject specific documentary establishing scene","dolly_push","boom"),
+            ("editorial_montage","THE DETAIL","Show the evidence up close","authentic subject macro detail photography","pan_left","whoosh"),
+            ("process_diagram","THE MECHANISM","Make the process visible","topic specific process demonstration footage","zoom_in","pulse"),
+            ("data_viz","THE CONTEXT","Add useful supporting context","relevant real world information display","pan_right","whoosh"),
+            ("split_compare","THE COUNTERPOINT","Show what changes the view","contrasting real world situation comparison","zoom_out","pulse"),
+            ("cinema_outro","THE TAKEAWAY","Finish on the practical meaning","subject relevant human environment outro","dolly_push","boom"),
         ]
 
-    narration = " ".join(narration_parts)
-    extension_index = 0
-    target_words = max(60, min_words)
-    while len(narration.split()) < target_words:
-        narration += " " + extensions[extension_index % len(extensions)]
-        extension_index += 1
+    narration = " ".join(blocks)
+    while len(narration.split()) < max(35, min_words):
+        narration += " " + (blocks[len(narration.split()) % len(blocks)])
+    if is_hinglish and kind not in {"market_update"}:
+        narration = " ".join([
+            f"{topic} ko samajhne ke liye pehle real situation dekhein.",
+            "Phir uska mechanism aur practical example step by step follow karein.",
+            "Jo fact verified hai use fact rakhein, aur jo analysis hai use clearly analysis batayein.",
+            "Aakhir mein viewer ko ek useful takeaway dein, bina unsupported claims ke.",
+        ] + blocks)
 
-    scene_specs = [
-        ("cinema_hero", "THE QUESTION", "START WITH THE CORE IDEA", "central idea emerging through cinematic shadows", "dolly_push", "boom"),
-        ("three_d_globe", "THE CONTEXT", "CONNECT THE BIG PICTURE", "global network linking ideas across borders", "pan_left", "whoosh"),
-        ("three_d_bars", "THE MECHANISM", "FOLLOW EACH STEP", "process diagram illuminated in a dark studio", "zoom_in", "pulse"),
-        ("candlestick_chart", "THE SIGNAL", "SEPARATE SIGNAL FROM NOISE", "animated market candles crossing liquidity zones", "pan_right", "whoosh"),
-        ("split_compare", "THE TRADE-OFF", "COMPARE THE ALTERNATIVES", "two contrasting strategies under focused light", "zoom_out", "pulse"),
-        ("step_list", "THE STANDARD", "TEST THE ASSUMPTIONS", "evidence checklist beside a research notebook", "dolly_push", "whoosh"),
-        ("three_d_globe", "THE DECISION", "MAKE THE NEXT MOVE", "risk controls shaping deliberate decisions", "pan_left", "pulse"),
-        ("three_d_bars", "THE EXAMPLE", "MAKE THE MECHANISM VISIBLE", "hands reviewing evidence under studio light", "zoom_in", "pulse"),
-        ("three_d_globe", "THE TIMELINE", "FOLLOW WHAT CHANGES NEXT", "measured timeline connecting changing incentives", "pan_right", "whoosh"),
-        ("split_compare", "THE ALTERNATIVES", "WEIGH THE REAL OPTIONS", "clear decision tree among open alternatives", "dolly_push", "pulse"),
-        ("step_list", "THE IMPLICATION", "NAME THE PRACTICAL CONSEQUENCE", "research notes beside a focused market display", "pan_left", "whoosh"),
-        ("cinema_outro", "THE TAKEAWAY", "RETURN TO THE CORE IDEA", "quiet sunrise over a cinematic city skyline", "zoom_out", "boom"),
-    ]
-    scenes = [
-        {
+    rng.shuffle(specs[1:-1])
+    scenes = []
+    for index, (scene_type, kicker, headline, visual_query, motion, cue) in enumerate(specs):
+        scenes.append({
             "type": scene_type,
             "weight": 1.0,
             "kicker": kicker,
             "headline": headline,
-            "subline": f"A focused look at {topic}." if index in {0, len(scene_specs) - 1} else "",
+            "subline": topic if index in {0, len(specs) - 1} else "",
             "visualQuery": visual_query,
             "cameraMotion": motion,
             "sfxCue": cue,
-        }
-        for index, (scene_type, kicker, headline, visual_query, motion, cue)
-        in enumerate(scene_specs)
-    ]
+            "mediaMode": "video" if index in {0, len(specs) - 1} else "image",
+        })
     return {
-        "title": f"{topic.title()} | Signal to Strategy",
+        "title": f"{topic.title()} | Studio Production",
         "brandTag": brand,
         "themeColor": color,
         "mode": mode,
         "narration": narration,
         "scenes": scenes,
+        "degradedMode": True,
     }
+
+
 
 
 def generate_storyboard(
     prompt: str,
     sys_prompt: str,
     min_narration_words: int,
-    brand: str = "IFXTRADES",
-    color: str = "#D4AF37",
+    brand: str = "",
+    color: str = "#A8B2C0",
     mode: str = "shorts",
     is_hinglish: bool = False,
+    variation_key: str = "",
 ) -> dict:
-    minimum_words = max(60, min_narration_words)
-    # Primary: keyless Pollinations. Its public free tier can impose cooldowns.
+    minimum_words = max(30, min_narration_words)
+    variation_key = variation_key or JOB_ID
+    variation_instruction = (
+        f"\n\nCreative variation key: {variation_key}. This is a new production. "
+        "Choose a fresh narrative angle, examples, shot sequence and visual treatment. "
+        "Do not reuse a generic template or mention this key."
+    )
+    user_prompt = f"{prompt}{variation_instruction}"
+
+    # 1) Optional self-hosted Ollama brain (works in Colab or on a reachable private server).
+    ollama_base = os.environ.get("OLLAMA_BASE_URL", "").strip().rstrip("/")
+    if ollama_base:
+        model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
+        try:
+            response = requests.post(
+                f"{ollama_base}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "format": "json",
+                    "stream": False,
+                    "options": {"temperature": 0.88},
+                },
+                timeout=120,
+            )
+            response.raise_for_status()
+            raw = response.json().get("message", {}).get("content", "")
+            result = validate_storyboard(clean_json_response(raw), minimum_words)
+            result["storyboardProvider"] = f"ollama:{model}"
+            print(f"Creative director used self-hosted Ollama ({model}).")
+            return result
+        except Exception as error:
+            print(f"Ollama director unavailable; trying Gemini/Pollinations: {error}")
+
+    # 2) Prefer the configured Gemini API over the keyless generic provider.
+    if GEMINI_API_KEY and os.environ.get("PREFER_GEMINI", "1").casefold() not in {"0", "false", "no"}:
+        models = list(dict.fromkeys([
+            os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"),
+            "gemini-3.5-flash-lite",
+            "gemini-3.6-flash",
+        ]))
+        for model_id in models:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
+                response = requests.post(
+                    url,
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": GEMINI_API_KEY,
+                    },
+                    json={
+                        "systemInstruction": {"parts": [{"text": sys_prompt}]},
+                        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                        "generationConfig": {
+                            "responseMimeType": "application/json",
+                            "maxOutputTokens": 8192,
+                        },
+                    },
+                    timeout=75,
+                )
+                if response.status_code != 200:
+                    print(f"Gemini {model_id} returned HTTP {response.status_code}: {response.text[:180]}")
+                    continue
+                raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                result = validate_storyboard(clean_json_response(raw), minimum_words)
+                result["storyboardProvider"] = f"gemini:{model_id}"
+                print(f"Creative director used Gemini ({model_id}).")
+                return result
+            except Exception as error:
+                print(f"Gemini {model_id} unavailable; trying next provider: {error}")
+
+    # 3) Keyless Pollinations fallback. Every request carries a fresh creative variation key.
     pollinations_error = None
-    free_model = "openai"
-    retry_prompt = f"{prompt}\n\nRespond with valid JSON only."
+    free_model = os.environ.get("POLLINATIONS_TEXT_MODEL", "openai")
+    retry_prompt = f"{user_prompt}\n\nRespond with valid JSON only."
     for attempt in range(2):
         try:
-            resp = requests.post(
+            response = requests.post(
                 "https://text.pollinations.ai/openai",
                 headers={"Content-Type": "application/json"},
                 json={
@@ -217,84 +334,32 @@ def generate_storyboard(
                         {"role": "system", "content": sys_prompt},
                         {"role": "user", "content": retry_prompt},
                     ],
-                    "temperature": 0.5,
+                    "temperature": 0.88,
                     "max_tokens": 8192,
                     "response_format": {"type": "json_object"},
                 },
                 timeout=75,
             )
-        except Exception as e:
-            print(f"Pollinations {free_model} fallback: {e}")
-            pollinations_error = str(e)
-            if attempt == 0:
-                time.sleep(46)
-                continue
-            break
-
-        if (
-            resp.status_code == 402
-            and "FREE_LIMIT" in resp.text
-            and attempt == 0
-        ):
-            retry_after = re.search(r"retry after\s+(\d+)s", resp.text, re.IGNORECASE)
-            delay = min(int(retry_after.group(1)) + 1, 61) if retry_after else 46
-            print(f"Pollinations free limit reached; retrying after {delay}s.")
-            time.sleep(delay)
-            continue
-        if resp.status_code != 200:
-            pollinations_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
-            print(f"Pollinations {free_model} status {resp.status_code}: {resp.text[:200]}")
-            break
-
-        try:
-            raw_text = resp.json()["choices"][0]["message"]["content"]
-            storyboard = validate_storyboard(
-                clean_json_response(raw_text),
-                minimum_words,
+            if response.status_code != 200:
+                pollinations_error = f"HTTP {response.status_code}: {response.text[:180]}"
+                print(f"Pollinations status {response.status_code}; moving to fallback.")
+                break
+            raw = response.json()["choices"][0]["message"]["content"]
+            result = validate_storyboard(clean_json_response(raw), minimum_words)
+            result["storyboardProvider"] = f"pollinations:{free_model}"
+            print(f"Creative director used keyless Pollinations ({free_model}).")
+            return result
+        except Exception as error:
+            pollinations_error = str(error)
+            print(f"Pollinations storyboard attempt {attempt + 1} failed: {error}")
+            retry_prompt = (
+                f"{user_prompt}\n\nThe last response failed validation. Return a fresh, "
+                f"complete JSON object with at least {minimum_words} narration words and "
+                "visually distinct, topic-specific scenes. Do not shorten the narration."
             )
-            print(f"Directed with Pollinations Free ({free_model})")
-            return storyboard
-        except (IndexError, KeyError, TypeError, ValueError) as e:
-            pollinations_error = str(e)
-            print(f"Pollinations {free_model} response rejected: {e}")
-            if attempt == 0:
-                retry_prompt = (
-                    f"{prompt}\n\nThe previous response was rejected: {e}. "
-                    f"Return a complete corrected JSON object. The narration must "
-                    f"contain at least {minimum_words} words and include "
-                    "between 3 and 14 complete scenes. Do not shorten it."
-                )
-                time.sleep(46)
 
-    if GEMINI_API_KEY:
-        for model_id in ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
-                resp = requests.post(
-                    url,
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-goog-api-key": GEMINI_API_KEY,
-                    },
-                    json={
-                        "contents": [{"parts": [{"text": f"{sys_prompt}\n\nUser request: {prompt}"}]}],
-                        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.5},
-                    },
-                    timeout=60,
-                )
-                if resp.status_code == 200:
-                    raw_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    print(f"Directed with Gemini fallback ({model_id})")
-                    return validate_storyboard(
-                        clean_json_response(raw_text),
-                        minimum_words,
-                    )
-                print(f"Gemini {model_id} status {resp.status_code}: {resp.text[:200]}")
-            except Exception as e:
-                print(f"Gemini {model_id} error: {e}")
-
-    detail = f" Pollinations error: {pollinations_error}" if pollinations_error else ""
-    print(f"AI storyboard providers unavailable; using deterministic fallback.{detail}")
+    detail = f" Provider diagnostic: {pollinations_error}" if pollinations_error else ""
+    print(f"All AI storyboard providers unavailable; using explicit degraded fallback.{detail}")
     fallback = build_fallback_storyboard(
         prompt,
         brand,
@@ -303,7 +368,9 @@ def generate_storyboard(
         is_hinglish,
         min_words=minimum_words,
     )
-    return validate_storyboard(fallback, minimum_words)
+    return validate_storyboard(fallback, min(35, minimum_words))
+
+
 
 
 _GRADIO_VIDEO_SCRIPT = r"""
