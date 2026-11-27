@@ -125,9 +125,6 @@ def run(video_path: str | Path, data_path: str | Path, output_dir: str | Path) -
     data = json.loads(video_data_path.read_text(encoding="utf-8"))
     package = build_social_package(data)
     output.mkdir(parents=True, exist_ok=True)
-    (output / "social_package.json").write_text(
-        json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
     (output / "social_caption.md").write_text(
         f"# {package['title']}\n\n{package['description']}\n\n"
         + " ".join(package["hashtags"]) + "\n",
@@ -142,6 +139,9 @@ def run(video_path: str | Path, data_path: str | Path, output_dir: str | Path) -
         )
     else:
         package["cover"] = None
+    (output / "social_package.json").write_text(
+        json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(
         f"Prepared social package: {package['title']} | "
         f"{len(package['hashtags'])} tags | cover={'yes' if package['cover'] else 'no'}"
