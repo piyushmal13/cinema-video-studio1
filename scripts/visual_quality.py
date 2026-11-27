@@ -24,6 +24,22 @@ def audit_visual_plan(scenes: list[dict[str, Any]], public_dir: str | Path = "pu
     ]
     if scenes and len(files) / len(scenes) < 0.60:
         warnings.append("Fewer than 60% of scenes have downloaded/generated media; some procedural fallbacks may appear.")
+    treatments = [str(scene.get("visualTreatment", "")).strip() for scene in scenes]
+    treatments = [treatment for treatment in treatments if treatment]
+    unique_treatments = sorted(set(treatments))
+    adjacent_repeats = sum(
+        left == right for left, right in zip(treatments, treatments[1:])
+    )
+    if len(scenes) >= 6 and len(unique_treatments) < min(5, len(scenes) // 2):
+        warnings.append(
+            f"Visual grammar is too narrow: {len(unique_treatments)} unique treatments "
+            f"for {len(scenes)} scenes."
+        )
+    if adjacent_repeats:
+        warnings.append(
+            f"Adjacent scenes repeat the same composition {adjacent_repeats} time(s)."
+        )
+
     hashes: dict[str, list[str]] = {}
     for relative in files:
         path = root / Path(*relative.replace("\\", "/").split("/"))
@@ -42,6 +58,9 @@ def audit_visual_plan(scenes: list[dict[str, Any]], public_dir: str | Path = "pu
         "passed": not errors,
         "scene_count": len(scenes),
         "media_backed_scenes": len(files),
+        "visual_treatments": unique_treatments,
+        "visual_treatment_count": len(unique_treatments),
+        "adjacent_treatment_repeats": adjacent_repeats,
         "warnings": warnings,
         "errors": errors,
     }

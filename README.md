@@ -23,10 +23,22 @@ The generator coordinates the creative director, research director, scene timing
 - Provider order: reachable self-hosted Ollama when configured; configured Gemini when a key is supplied and PREFER_GEMINI is enabled; then keyless Pollinations. Provider limits and failures are recorded in storyboardProvider and degradedMode.
 - The degraded fallback is topic-specific and shorter than the former fixed 12-scene generic template. It is explicitly marked as degraded rather than presented as a normal AI-written script.
 - Every Telegram production receives a unique request ID. Media cache entries are scoped to the production, so an image from an earlier video is not silently reused just because the visual query is identical.
-- Generated-motion attempts are spread across opening, middle and ending scenes instead of being hard-coded to positions 0 and 2. GitHub Actions defaults to a budget of three clips per reel. Other scenes can use subject-matched footage, still photography or scene graphics.
+- Generated-motion attempts are spread across opening, middle and ending scenes instead of being hard-coded to positions 0 and 2. GitHub Actions now attempts up to five generated-motion clips per production (subject to provider availability and timeouts). Other scenes can use subject-matched footage, still photography or scene graphics.
 - Media sources remain bounded and best-effort: Pollinations video/image endpoints, the existing Lightricks ZeroGPU Space, Archive.org and Wikimedia Commons public-domain/CC0 media. Free providers can queue, rate-limit or change availability.
 - Added scene families include editorial montage, kinetic typography, process diagrams and data-viz. 3D bar visuals only render when real barValues are supplied; the renderer no longer invents chart numbers.
 - IFXTrades branding is opt-in. It is applied only when the current request names IFXTrades / IndiaFXTrades or supplies an explicit brand option.
+
+## Visual storytelling and editorial grammar
+
+The visual director and Remotion renderer are now separate systems. The storyboard controls the subject, action and narrative beat; the visual director assigns a scene-specific composition, camera grammar, caption treatment and transition. It prevents a topic-aware script from being flattened into one centred title card.
+
+- Fifteen distinct composition systems are available: full-bleed hero, documentary lower-third, asymmetric editorial split, magazine cover, kinetic type, vertical timeline, process blueprint, comparative split, source-data stage, market chart, orbital stage, cinema end frame, immersive photo, photo essay and side-caption.
+- The treatment is selected with scene meaning in mind, then adjusted across the sequence to avoid repeating the previous two compositions. Camera movement now includes tilts, diagonal drift, handheld and intentional static holds as well as push/pan/zoom.
+- Each image scene can use a ComfyUI batch of up to three stills by default. The renderer crossfades through the returned photo set during that scene. Configure COMFYUI_IMAGE_WORKFLOW to return multiple images and set CINEMA_COMFY_IMAGES_PER_SCENE (1–5) to control the batch size. Providers that return one still continue to work unchanged.
+- Documentary and photo-essay scenes use lighter image grading and restrained lower-thirds; data, blueprint and comparison scenes use their own information layouts. Subtitles adapt between minimal, documentary, karaoke and newsroom ticker treatments.
+- The visual QA report now counts unique composition systems and flags repeated neighbouring layouts as well as duplicate media. A quality report is diagnostic and cannot certify that a stock or generated image is semantically perfect.
+
+The default GitHub runner still uses best-effort public media and the existing AI providers. A configured ComfyUI image workflow can create a larger coherent photo batch on a GPU host; the repository does not silently download large checkpoints or assume GPU hardware.
 
 ## Market research and source discipline
 

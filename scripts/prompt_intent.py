@@ -213,7 +213,10 @@ def validate_storyboard(
         "editorial_montage",
         "data_viz",
     }
-    valid_motions = {"zoom_in", "zoom_out", "pan_left", "pan_right", "dolly_push"}
+    valid_motions = {
+        "zoom_in", "zoom_out", "pan_left", "pan_right", "dolly_push",
+        "tilt_up", "tilt_down", "drift_diagonal", "handheld", "static",
+    }
     valid_cues = {"boom", "whoosh", "riser", "pulse"}
     for index, scene in enumerate(scenes):
         if not isinstance(scene, dict):

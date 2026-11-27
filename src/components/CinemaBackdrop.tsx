@@ -10,7 +10,7 @@ import {
   useVideoConfig,
 } from 'remotion';
 import { noise2D } from '@remotion/noise';
-import { CameraMotion, SceneType } from '../types';
+import type { CameraMotion, SceneType, VisualTreatment } from '../types';
 
 const sceneAccentColors: Record<SceneType, string> = {
   cinema_hero: '#D4AF37',
@@ -26,11 +26,23 @@ const sceneAccentColors: Record<SceneType, string> = {
   data_viz: '#60A5FA',
 };
 
+const LIGHT_TREATMENTS = new Set<VisualTreatment>([
+  'documentary_lower_third', 'photo_essay', 'immersive_photo',
+]);
+const SIDE_TREATMENTS = new Set<VisualTreatment>([
+  'editorial_split', 'cinematic_side_caption',
+]);
+const GRAPHIC_TREATMENTS = new Set<VisualTreatment>([
+  'process_blueprint', 'data_stage', 'market_chart', 'vertical_timeline',
+]);
+
 export const CinemaBackdrop: React.FC<{
   mediaFile?: string;
+  mediaFiles?: string[];
   mediaKind?: 'video' | 'image' | 'none';
   cameraMotion?: CameraMotion;
   sceneType?: SceneType;
+  visualTreatment?: VisualTreatment;
   sceneIndex?: number;
   motionDurationInFrames?: number;
   beatSync?: boolean;
@@ -39,9 +51,11 @@ export const CinemaBackdrop: React.FC<{
   isCinemaMode?: boolean;
 }> = ({
   mediaFile,
+  mediaFiles = [],
   mediaKind = 'none',
   cameraMotion = 'zoom_in',
   sceneType,
+  visualTreatment = 'documentary_lower_third',
   sceneIndex = 0,
   motionDurationInFrames,
   beatSync = false,
@@ -50,48 +64,60 @@ export const CinemaBackdrop: React.FC<{
   isCinemaMode = false,
 }) => {
   const frame = useCurrentFrame();
-  const { durationInFrames, fps } = useVideoConfig();
-  const progress = Math.min(
-    1,
-    frame / Math.max(1, motionDurationInFrames ?? durationInFrames)
-  );
+  const { durationInFrames, fps, width, height } = useVideoConfig();
+  const totalMotionFrames = Math.max(1, motionDurationInFrames ?? durationInFrames);
+  const progress = Math.min(1, Math.max(0, frame / totalMotionFrames));
   const backdropAccent = sceneType ? sceneAccentColors[sceneType] : accentColor;
-  const fallbackBackground =
-    sceneType === 'split_compare'
-      ? 'linear-gradient(110deg, rgba(127,29,29,0.42), rgba(5,8,15,0.75) 48%, rgba(212,175,55,0.22)), radial-gradient(circle at 50% 35%, #090D16 0%, #04060A 100%)'
-      : sceneType === 'step_list'
-        ? `linear-gradient(90deg, ${backdropAccent}20 1px, transparent 1px), linear-gradient(${backdropAccent}18 1px, transparent 1px), radial-gradient(circle at 50% 35%, #111827 0%, #04060A 100%)`
-        : sceneType === 'candlestick_chart'
-          ? `linear-gradient(90deg, ${backdropAccent}17 1px, transparent 1px), linear-gradient(${backdropAccent}17 1px, transparent 1px), radial-gradient(circle at 50% 35%, ${backdropAccent}42 0%, #090D16 55%, #04060A 100%)`
-          : `radial-gradient(circle at 50% 35%, ${backdropAccent}42 0%, #090D16 55%, #04060A 100%), linear-gradient(135deg, #05070B 0%, ${backdropAccent}18 50%, #05070B 100%)`;
 
-  let scale = 1.06;
+  let scale = 1.035;
   let translateX = 0;
   let translateY = 0;
-
   switch (cameraMotion) {
     case 'zoom_in':
-      scale = interpolate(progress, [0, 1], [1.02, 1.18]);
+      scale = interpolate(progress, [0, 1], [1.015, 1.17]);
       break;
     case 'zoom_out':
-      scale = interpolate(progress, [0, 1], [1.2, 1.03]);
+      scale = interpolate(progress, [0, 1], [1.18, 1.025]);
       break;
     case 'pan_left':
       scale = 1.14;
-      translateX = interpolate(progress, [0, 1], [35, -35]);
+      translateX = interpolate(progress, [0, 1], [width * 0.035, -width * 0.035]);
       break;
     case 'pan_right':
       scale = 1.14;
-      translateX = interpolate(progress, [0, 1], [-35, 35]);
+      translateX = interpolate(progress, [0, 1], [-width * 0.035, width * 0.035]);
       break;
     case 'dolly_push':
-      scale = interpolate(progress, [0, 1], [1.0, 1.24]);
-      translateY = interpolate(progress, [0, 1], [15, -20]);
+      scale = interpolate(progress, [0, 1], [1.0, 1.23]);
+      translateY = interpolate(progress, [0, 1], [height * 0.012, -height * 0.018]);
+      break;
+    case 'tilt_up':
+      scale = 1.12;
+      translateY = interpolate(progress, [0, 1], [height * 0.035, -height * 0.035]);
+      break;
+    case 'tilt_down':
+      scale = 1.12;
+      translateY = interpolate(progress, [0, 1], [-height * 0.035, height * 0.035]);
+      break;
+    case 'drift_diagonal':
+      scale = 1.16;
+      translateX = interpolate(progress, [0, 1], [-width * 0.025, width * 0.025]);
+      translateY = interpolate(progress, [0, 1], [height * 0.02, -height * 0.02]);
+      break;
+    case 'handheld':
+      scale = 1.12;
+      translateX = interpolate(progress, [0, 1], [width * 0.012, -width * 0.012]);
+      translateY = interpolate(progress, [0, 1], [-height * 0.008, height * 0.008]);
+      break;
+    case 'static':
+      scale = 1.015;
       break;
   }
 
-  const shakeX = noise2D('camX', frame / (fps * 2.5), 0) * 6;
-  const shakeY = noise2D('camY', 0, frame / (fps * 2.5)) * 6;
+  const handheld = cameraMotion === 'handheld';
+  const shakeX = handheld ? noise2D('handheld-x', frame / (fps * 0.45), sceneIndex) * 2.2 : 0;
+  const shakeY = handheld ? noise2D('handheld-y', sceneIndex, frame / (fps * 0.45)) * 2.2 : 0;
+
   let beatPulse = 0;
   if (beatSync && beatTimestamps.length > 0) {
     const currentSec = frame / fps;
@@ -104,118 +130,107 @@ export const CinemaBackdrop: React.FC<{
     }
     const nearestBeat = Math.min(
       beatTimestamps[low] ?? Number.POSITIVE_INFINITY,
-      beatTimestamps[low - 1] ?? Number.POSITIVE_INFINITY
+      beatTimestamps[low - 1] ?? Number.POSITIVE_INFINITY,
     );
-    beatPulse = Math.max(0, 1 - Math.abs(nearestBeat - currentSec) / 0.12) * 0.018;
-  } else if (beatSync) {
-    beatPulse = Math.max(0, Math.sin((frame / fps) * Math.PI * 4)) * 0.012;
+    beatPulse = Math.max(0, 1 - Math.abs(nearestBeat - currentSec) / 0.12) * 0.012;
   }
   const animatedScale = scale * (1 + beatPulse);
+  const mediaTransform = `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`;
+
+  const sequenceFiles = mediaFiles.filter((file) => typeof file === 'string' && file.length > 0);
+  const imageFiles = sequenceFiles.length ? sequenceFiles : (mediaFile ? [mediaFile] : []);
+  const slot = Math.min(imageFiles.length - 1, Math.floor(progress * imageFiles.length));
+  const activeImage = imageFiles.length > 0 ? imageFiles[Math.max(0, slot)] : '';
+  const previousImage = imageFiles.length > 1 && slot > 0 ? imageFiles[slot - 1] : '';
+  const localProgress = imageFiles.length > 1 ? (progress * imageFiles.length) - slot : 1;
+  const imageFade = slot === 0 ? 1 : interpolate(localProgress, [0, 0.16], [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
+
+  const fallbackBackground = GRAPHIC_TREATMENTS.has(visualTreatment)
+    ? `linear-gradient(90deg,${backdropAccent}1c 1px,transparent 1px),linear-gradient(${backdropAccent}1c 1px,transparent 1px),radial-gradient(ellipse at 65% 42%,${backdropAccent}25, #05080e 66%)`
+    : visualTreatment === 'comparative_split'
+      ? 'linear-gradient(105deg,rgba(127,29,29,0.42),rgba(4,8,14,0.9) 49%,rgba(34,197,94,0.22)),#05080e'
+      : `radial-gradient(ellipse at 58% 42%, ${backdropAccent}34 0%, #101722 42%, #04060a 100%)`;
+
+  const scrim = LIGHT_TREATMENTS.has(visualTreatment)
+    ? 'linear-gradient(0deg,rgba(2,5,9,0.76) 0%,rgba(2,5,9,0.18) 37%,rgba(2,5,9,0.02) 68%)'
+    : SIDE_TREATMENTS.has(visualTreatment)
+      ? (visualTreatment === 'editorial_split'
+        ? 'linear-gradient(90deg,rgba(2,5,9,0.85) 0%,rgba(2,5,9,0.53) 48%,rgba(2,5,9,0.05) 83%)'
+        : 'linear-gradient(270deg,rgba(2,5,9,0.88) 0%,rgba(2,5,9,0.50) 43%,rgba(2,5,9,0.04) 82%)')
+      : visualTreatment === 'kinetic_typography' || visualTreatment === 'cinema_end_frame'
+        ? 'radial-gradient(ellipse at center,rgba(2,5,9,0.18),rgba(2,5,9,0.58) 92%)'
+        : 'linear-gradient(180deg,rgba(2,5,9,0.22) 0%,rgba(2,5,9,0.05) 34%,rgba(2,5,9,0.78) 100%)';
+
+  const photoFilter = LIGHT_TREATMENTS.has(visualTreatment)
+    ? 'saturate(1.08) contrast(1.04) brightness(0.98)'
+    : 'saturate(1.14) contrast(1.10) brightness(0.9)';
 
   return (
-    <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#05070B' }}>
+    <AbsoluteFill style={{ overflow: 'hidden', background: '#05070B' }}>
       {mediaFile && mediaKind === 'video' && (
-        <AbsoluteFill
-          style={{
-            transform: `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
-          }}
-        >
-          <Loop durationInFrames={motionDurationInFrames ?? durationInFrames}>
+        <AbsoluteFill style={{ transform: mediaTransform }}>
+          <Loop durationInFrames={totalMotionFrames}>
             <OffthreadVideo
               src={staticFile(mediaFile)}
               muted
-              style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.12) saturate(1.15)' }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', filter: photoFilter }}
             />
           </Loop>
         </AbsoluteFill>
       )}
 
-      {mediaFile && mediaKind === 'image' && (
-        <AbsoluteFill
-          style={{
-            transform: `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
-          }}
-        >
+      {mediaKind === 'image' && activeImage && (
+        <AbsoluteFill style={{ transform: mediaTransform }}>
+          {previousImage && (
+            <Img
+              src={staticFile(previousImage)}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', filter: photoFilter }}
+            />
+          )}
           <Img
-            src={staticFile(mediaFile)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.15) saturate(1.18)' }}
+            src={staticFile(activeImage)}
+            style={{
+              width: '100%', height: '100%', objectFit: 'cover',
+              filter: photoFilter, opacity: imageFade,
+            }}
           />
         </AbsoluteFill>
       )}
 
       {(!mediaFile || mediaKind === 'none') && (
-        <AbsoluteFill
-          style={{
-            background: fallbackBackground,
-            backgroundSize:
-              sceneType === 'step_list' || sceneType === 'candlestick_chart'
-                ? '64px 64px, 64px 64px, cover'
-                : 'cover',
-            transform: `scale(${animatedScale}) translate(${translateX + shakeX}px, ${translateY + shakeY}px)`,
-          }}
-        />
+        <AbsoluteFill style={{
+          background: fallbackBackground,
+          backgroundSize: GRAPHIC_TREATMENTS.has(visualTreatment) ? '58px 58px,58px 58px,cover' : 'cover',
+          transform: mediaTransform,
+        }} />
       )}
 
-      <AbsoluteFill
-        style={{
-          zIndex: 5,
+      <AbsoluteFill style={{ background: scrim }} />
+
+      {(visualTreatment === 'process_blueprint' || visualTreatment === 'data_stage' || visualTreatment === 'market_chart') && (
+        <AbsoluteFill style={{
+          opacity: 0.18,
+          backgroundImage: 'linear-gradient(rgba(255,255,255,0.10) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.10) 1px,transparent 1px)',
+          backgroundSize: '42px 42px',
+          maskImage: 'linear-gradient(90deg,transparent,black 28%,black 88%,transparent)',
+        }} />
+      )}
+
+      {(visualTreatment === 'editorial_cover' || visualTreatment === 'cinema_end_frame') && (
+        <AbsoluteFill style={{
+          border: '1px solid rgba(255,255,255,0.12)',
+          margin: '3.5%',
           pointerEvents: 'none',
-          opacity: 0.22,
-          mixBlendMode: 'soft-light',
-          backgroundImage:
-            'repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0px, transparent 1px, transparent 4px)',
-          backgroundPositionY: `${frame % 4}px`,
-        }}
-      />
-
-      <AbsoluteFill
-        style={{
-          background:
-            'linear-gradient(180deg, rgba(4,6,10,0.78) 0%, rgba(4,6,10,0.38) 42%, rgba(4,6,10,0.88) 84%, rgba(4,6,10,0.97) 100%)',
-        }}
-      />
-
-      <div
-        style={{
-          position: 'absolute',
-          top: '22%',
-          left: '-10%',
-          right: '-10%',
-          height: 2,
-          background: `linear-gradient(90deg, transparent 0%, ${accentColor}55 50%, transparent 100%)`,
-          filter: 'blur(3px)',
-          opacity: 0.65,
-        }}
-      />
-
-      <AbsoluteFill style={{ pointerEvents: 'none' }}>
-        {Array.from({ length: 14 }).map((_, idx) => {
-          const px = (idx * 173 + sceneIndex * 71 + frame * (0.4 + (idx % 3) * 0.2)) % 1080;
-          const py = (idx * 293 - sceneIndex * 97 - frame * (0.5 + (idx % 4) * 0.15) + 4000) % 1920;
-          const size = 2 + (idx % 3) * 2;
-          return (
-            <div
-              key={idx}
-              style={{
-                position: 'absolute',
-                left: px,
-                top: py,
-                width: size,
-                height: size,
-                borderRadius: '50%',
-                backgroundColor: idx % 2 === 0 ? accentColor : '#38BDF8',
-                opacity: 0.25 + (idx % 4) * 0.08,
-                boxShadow: `0 0 8px ${accentColor}`,
-              }}
-            />
-          );
-        })}
-      </AbsoluteFill>
+          opacity: 0.8,
+        }} />
+      )}
 
       {isCinemaMode && (
         <>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 84, backgroundColor: '#000000', zIndex: 40 }} />
-          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 84, backgroundColor: '#000000', zIndex: 40 }} />
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 54, background: '#000', zIndex: 40 }} />
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 54, background: '#000', zIndex: 40 }} />
         </>
       )}
     </AbsoluteFill>

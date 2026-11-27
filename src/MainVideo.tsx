@@ -17,68 +17,76 @@ import '@fontsource/montserrat/900.css';
 import rawVideoData from '../public/video_data.json';
 import { CinemaBackdrop } from './components/CinemaBackdrop';
 import { ThreeDScenes } from './components/ThreeDScenes';
+import { SceneDirector } from './components/SceneDirector';
 import { VideoProps, SceneItem } from './types';
 
 const defaultVideoData = rawVideoData as VideoProps;
 
 const SubtitleOverlay: React.FC<{
   words: VideoProps['words'];
+  scenes: SceneItem[];
   themeColor: string;
-}> = ({ words, themeColor }) => {
+  isLandscape?: boolean;
+}> = ({ words, scenes, themeColor, isLandscape = false }) => {
   const frame = useCurrentFrame();
   const { fps, height } = useVideoConfig();
   const currentSec = frame / fps;
-
   if (!words || words.length === 0) return null;
 
   const activeIndex = words.findIndex(
-    (w) => currentSec >= w.start - 0.08 && currentSec <= w.end + 0.15
+    (word) => currentSec >= word.start - 0.08 && currentSec <= word.end + 0.15
   );
+  if (activeIndex < 0) return null;
 
-  if (activeIndex === -1) return null;
-
-  const windowStart = activeIndex;
-  const windowEnd = Math.min(words.length, activeIndex + 3);
-  const visibleWords = words.slice(windowStart, windowEnd);
-  const fontSize = Math.max(22, Math.min(44, height * 0.024));
+  const scene = scenes.find(
+    (item) => currentSec >= item.startSec && currentSec <= item.endSec
+  );
+  const style = scene?.captionStyle || 'documentary';
+  const visibleWords = words.slice(activeIndex, Math.min(words.length, activeIndex + 4));
+  const fontSize = Math.max(19, Math.min(34, height * (isLandscape ? 0.021 : 0.019)));
+  const minimal = style === 'minimal';
+  const documentary = style === 'documentary';
+  const ticker = style === 'ticker';
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        bottom: '19%',
-        left: '6%',
-        right: '6%',
-        display: 'flex',
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        gap: '8px',
-        zIndex: 30,
-        pointerEvents: 'none',
-      }}
-    >
-      {visibleWords.map((item, idx) => {
-        const isCurrent = windowStart + idx === activeIndex;
+    <div style={{
+      position: 'absolute',
+      bottom: isLandscape ? '10%' : '13%',
+      left: ticker ? '5%' : '7%',
+      right: ticker ? '5%' : '7%',
+      display: 'flex',
+      justifyContent: ticker || documentary ? 'flex-start' : 'center',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      gap: minimal ? '5px' : '8px',
+      zIndex: 30,
+      pointerEvents: 'none',
+      padding: ticker ? '11px 16px' : documentary ? '0 0 0 14px' : '8px 12px',
+      borderLeft: ticker || documentary ? `3px solid ${themeColor}` : 'none',
+      background: ticker
+        ? 'rgba(3,7,13,0.88)'
+        : documentary
+          ? 'linear-gradient(90deg,rgba(3,7,13,0.72),transparent)'
+          : 'transparent',
+      maxWidth: isLandscape ? '76%' : undefined,
+      margin: isLandscape && !ticker && !documentary ? '0 auto' : undefined,
+    }}>
+      {visibleWords.map((item, index) => {
+        const current = index === 0;
         return (
-          <span
-            key={`${item.word}-${windowStart + idx}`}
-            style={{
-              fontFamily: '"Montserrat", system-ui, sans-serif',
-              fontSize: isCurrent ? fontSize : fontSize * 0.86,
-              fontWeight: 900,
-              letterSpacing: '0.02em',
-              textTransform: 'uppercase',
-              color: isCurrent ? themeColor : '#F8FAFC',
-              backgroundColor: 'rgba(5, 8, 15, 0.78)',
-              padding: '5px 12px',
-              borderRadius: '10px',
-              border: isCurrent ? `1px solid ${themeColor}` : '1px solid rgba(255,255,255,0.12)',
-              boxShadow: isCurrent ? `0 0 24px ${themeColor}55` : '0 4px 16px rgba(0,0,0,0.6)',
-              transform: isCurrent ? 'scale(1.06)' : 'scale(1)',
-            }}
-          >
-            {item.word}
-          </span>
+          <span key={`${item.word}-${activeIndex + index}`} style={{
+            fontFamily: ticker ? '"JetBrains Mono", monospace' : '"Montserrat", system-ui, sans-serif',
+            fontSize: current ? fontSize : fontSize * 0.86,
+            fontWeight: current ? 900 : 700,
+            letterSpacing: ticker ? '0.01em' : '0.015em',
+            textTransform: ticker ? 'none' : 'uppercase',
+            color: current ? (documentary ? '#FFFFFF' : themeColor) : '#F8FAFC',
+            background: minimal ? 'transparent' : current ? 'rgba(4,8,14,0.78)' : 'rgba(4,8,14,0.56)',
+            padding: minimal ? '0 2px' : '4px 9px',
+            borderBottom: documentary && current ? `2px solid ${themeColor}` : 'none',
+            borderRadius: minimal ? 0 : 5,
+            textShadow: '0 3px 18px rgba(0,0,0,0.92)',
+          }}>{item.word}</span>
         );
       })}
     </div>
@@ -458,6 +466,8 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
                     mediaKind={scene.mediaKind}
                     cameraMotion={scene.cameraMotion}
                     sceneType={scene.type}
+                    visualTreatment={scene.visualTreatment}
+                    mediaFiles={scene.mediaFiles}
                     sceneIndex={index}
                     motionDurationInFrames={durationFrames}
                     beatSync={videoData.beatSync}
@@ -471,7 +481,12 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
                     barValues={scene.barValues}
                     sceneIndex={index}
                   />
-                  <SceneCardOverlay scene={scene} themeColor={themeColor} sceneIndex={index} />
+                  <SceneDirector
+                    scene={scene}
+                    themeColor={themeColor}
+                    sceneIndex={index}
+                    isLandscape={Boolean(videoData.isLandscape || videoData.format === 'landscape')}
+                  />
                   {index > 0 && !videoData.masterAudioFile && sfxFile && (
                     <Sequence
                       from={0}
@@ -487,32 +502,29 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
                   <TransitionFlash />
                 </AbsoluteFill>
               </TransitionSeries.Sequence>
-              {index < scenes.length - 1 &&
-                (index % 3 === 0 ? (
+              {index < scenes.length - 1 && (
+                scene.transitionStyle === 'push' ? (
                   <TransitionSeries.Transition
-                    presentation={fade()}
-                    timing={springTiming({
-                      durationInFrames: transitionFrames,
-                      config: { damping: 200 },
-                    })}
+                    presentation={slide({ direction: scene.textSide === 'right' ? 'from-left' : 'from-right' })}
+                    timing={springTiming({ durationInFrames: transitionFrames, config: { damping: 200 } })}
                   />
-                ) : index % 3 === 1 ? (
+                ) : scene.transitionStyle === 'wipe' ? (
                   <TransitionSeries.Transition
-                    presentation={slide({ direction: 'from-right' })}
-                    timing={springTiming({
-                      durationInFrames: transitionFrames,
-                      config: { damping: 200 },
-                    })}
+                    presentation={wipe({ direction: 'from-left' })}
+                    timing={springTiming({ durationInFrames: transitionFrames, config: { damping: 200 } })}
+                  />
+                ) : scene.transitionStyle === 'flash' ? (
+                  <TransitionSeries.Transition
+                    presentation={wipe({ direction: 'from-bottom' })}
+                    timing={springTiming({ durationInFrames: transitionFrames, config: { damping: 120 } })}
                   />
                 ) : (
                   <TransitionSeries.Transition
-                    presentation={wipe({ direction: 'from-left' })}
-                    timing={springTiming({
-                      durationInFrames: transitionFrames,
-                      config: { damping: 200 },
-                    })}
+                    presentation={fade()}
+                    timing={springTiming({ durationInFrames: transitionFrames, config: { damping: 200 } })}
                   />
-                ))}
+                )
+              )}
             </React.Fragment>
           );
         })}
@@ -542,7 +554,12 @@ export const MainVideo: React.FC<VideoProps> = (props) => {
         </div>
       )}
 
-      <SubtitleOverlay words={videoData.words || []} themeColor={themeColor} />
+      <SubtitleOverlay
+        words={videoData.words || []}
+        scenes={scenes}
+        themeColor={themeColor}
+        isLandscape={Boolean(videoData.isLandscape || videoData.format === 'landscape')}
+      />
     </AbsoluteFill>
   );
 };

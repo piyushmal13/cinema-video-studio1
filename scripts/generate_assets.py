@@ -36,6 +36,7 @@ if __package__:
         diversify_scenes,
         stable_visual_seed,
     )
+    from .visual_director import assign_visual_language
     from .comfyui_client import generate_from_environment
     from .speech_alignment import align_with_whisperx
     from .timeline_export import export_otio
@@ -60,6 +61,7 @@ else:
         diversify_scenes,
         stable_visual_seed,
     )
+    from visual_director import assign_visual_language
     from comfyui_client import generate_from_environment
     from speech_alignment import align_with_whisperx
     from timeline_export import export_otio
@@ -69,6 +71,7 @@ else:
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
 JOB_ID = os.environ.get("CINEMA_JOB_ID", "").strip() or str(time.time_ns())
+SCENE_MEDIA_FILES: dict[int, list[str]] = {}
 
 os.makedirs("public/media", exist_ok=True)
 os.makedirs("out", exist_ok=True)
@@ -88,12 +91,19 @@ Never add a brand, logo, watermark, CTA or product promotion unless explicitly r
 Return ONLY one valid JSON object:
 - title: specific, concise title
 - narration: complete spoken narration
-- scenes: {scene_count_instruction} scenes, each with type, weight, kicker, headline, visualQuery (4–7 words), cameraMotion and sfxCue.
-- Optional: subline, statValue, bullets (up to 4), leftLabel, rightLabel, barValues (source-backed only), mediaMode ("video", "image", or "graphic").
+- scenes: {scene_count_instruction} scenes. Each scene must include type, weight, kicker, headline,
+  visualQuery (4–7 specific words), cameraMotion, sfxCue and visualTreatment.
+- Optional: subline, statValue, bullets (up to 4), leftLabel, rightLabel, barValues (source-backed only),
+  mediaMode ("video", "image", or "graphic"), shotSize.
+- visualTreatment must be one of hero_full_bleed, documentary_lower_third, editorial_split,
+  editorial_cover, kinetic_typography, vertical_timeline, process_blueprint, comparative_split,
+  data_stage, market_chart, orbit_stage, cinema_end_frame, immersive_photo, photo_essay,
+  cinematic_side_caption. The director may refine the composition to enforce film-wide variety.
 
 Available scene types: cinema_hero, three_d_globe, three_d_bars, candlestick_chart, split_compare, step_list, cinema_outro, kinetic_type, process_diagram, editorial_montage, data_viz.
 Use a different purposeful visual subject and shot family for every scene. Consecutive scenes must not repeat the same visual query, composition or treatment.
-cameraMotion: zoom_in, zoom_out, pan_left, pan_right, dolly_push.
+cameraMotion: zoom_in, zoom_out, pan_left, pan_right, dolly_push, tilt_up, tilt_down,
+drift_diagonal, handheld, static.
 sfxCue: boom, whoosh, riser, pulse.
 Weights must be positive. Data must be grounded. Illustrative visuals must be clearly labelled illustrative.
 Narration minimum for brief mode: {min_narration_words} words. In script mode, the supplied script overrides this length target."""
@@ -936,7 +946,8 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
     if try_wikimedia_video(query, idx, orientation, clip_path):
         return f"media/scene_{idx}_stock.mp4", "video"
 
-    # Optional ComfyUI still-image workflow can run on an existing GPU worker.
+    # Optional ComfyUI workflows can return a complete batch of distinct stills.
+    # Preserve up to three outputs and let the Remotion scene sequence them as a short photo essay.
     try:
         comfy_outputs = generate_from_environment(
             query,
@@ -944,14 +955,28 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
             media_kind="image",
             seed=stable_visual_seed(JOB_ID, idx, query),
         )
+        batch_limit = max(1, min(5, int(os.environ.get("CINEMA_COMFY_IMAGES_PER_SCENE", "3"))))
+        media_batch: list[str] = []
         for candidate in comfy_outputs:
-            if candidate.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"} and candidate.is_file():
-                relative_path = f"media/scene_{idx}_comfy{candidate.suffix.lower()}"
+            if (
+                candidate.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+                and candidate.is_file()
+                and candidate.stat().st_size > 5_000
+            ):
+                relative_path = f"media/scene_{idx}_comfy_{len(media_batch) + 1}{candidate.suffix.lower()}"
                 destination = os.path.join("public", relative_path.replace("/", os.sep))
                 os.makedirs(os.path.dirname(destination), exist_ok=True)
                 shutil.copyfile(candidate, destination)
-                print(f"Generated scene {idx} still with configured ComfyUI.")
-                return relative_path, "image"
+                media_batch.append(relative_path)
+                if len(media_batch) >= batch_limit:
+                    break
+        if media_batch:
+            SCENE_MEDIA_FILES[idx] = media_batch
+            print(
+                f"Generated scene {idx} still batch with configured ComfyUI "
+                f"({len(media_batch)} image(s))."
+            )
+            return media_batch[0], "image"
     except Exception as error:
         print(f"Optional ComfyUI image route unavailable for scene {idx}: {error}")
 
@@ -1565,6 +1590,8 @@ def main():
     )
     narration = sanitize_narration(narration_source)
     scenes = diversify_scenes(storyboard.get("scenes", []))
+    scenes = assign_visual_language(scenes, topic_kind, JOB_ID, orientation)
+    SCENE_MEDIA_FILES.clear()
     if not scenes:
         raise RuntimeError("Creative director returned no usable scenes.")
 
@@ -1594,7 +1621,7 @@ def main():
     timed_scenes = []
     video_scene_indexes = choose_video_scene_indexes(
         scenes,
-        max_clips=max(0, min(8, int(os.environ.get("CINEMA_MAX_VIDEO_CLIPS", "3")))),
+        max_clips=max(0, min(8, int(os.environ.get("CINEMA_MAX_VIDEO_CLIPS", "5")))),
     )
 
     for idx, scene in enumerate(scenes):
@@ -1622,6 +1649,9 @@ def main():
 
         scene["mediaFile"] = media_file
         scene["mediaKind"] = media_kind
+        scene["mediaFiles"] = SCENE_MEDIA_FILES.get(
+            idx, [media_file] if media_file else []
+        )
         scene["visualSeed"] = stable_visual_seed(JOB_ID, idx, query)
         timed_scenes.append(scene)
 
