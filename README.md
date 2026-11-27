@@ -45,6 +45,8 @@ GC=F is a gold futures contract, not XAUUSD spot. Public quote endpoints may be 
 
 ## Optional free integrations
 
+The six external open-source integrations, implementation status, licence notes and environment variables are inventoried in docs/FREE_OPEN_SOURCE_AI_STACK.md.
+
 The default pipeline remains lightweight. Large model weights are not installed in every GitHub Actions run.
 
 ### Ollama
@@ -61,7 +63,7 @@ scripts/comfyui_client.py uses the ComfyUI API workflow format. Configure a reac
 The adapter does not download large checkpoints or install arbitrary custom nodes. Without a reachable server and compatible workflow, existing Pollinations / public-media fallbacks remain active.
 
 ### WhisperX, OpenTimelineIO and Kokoro
-These are optional packages listed in requirements-optional.txt; they are not installed in the default GitHub Actions pipeline. Install only what the chosen worker needs. Set WHISPERX_ENABLED=1 to enable WhisperX alignment and OTIO_EXPORT_ENABLED=1 to write out/final.otio. Kokoro ONNX is listed as a local TTS candidate, but Edge TTS and gTTS remain active defaults until a local model/voice configuration has been installed and benchmarked. Model-weight terms must be checked separately from software licences.
+These are optional packages listed in requirements-optional.txt; they are not installed in the default GitHub Actions pipeline. Install only what the chosen worker needs. Set WHISPERX_ENABLED=1 to enable WhisperX alignment and OTIO_EXPORT_ENABLED=1 to write out/final.otio. Kokoro ONNX is an optional local TTS provider for English and Hindi when model/voice files are installed and KOKORO_TTS_ENABLED=1; otherwise Edge TTS and gTTS remain automatic fallbacks. Model-weight and voice terms must be checked separately from software licences.
 
 ## Telegram and Cloudflare setup
 
