@@ -178,5 +178,24 @@ class TelegramDeliveryTests(unittest.TestCase):
                 )
 
 
+    def test_network_failure_falls_back_to_temporary_link(self):
+        import requests
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "final.mp4"
+            video.write_bytes(b"video after interrupted Telegram upload")
+            post = Mock(side_effect=[
+                requests.ConnectionError("Telegram connection interrupted"),
+                Mock(status_code=200, json=lambda: {
+                    "status": "success",
+                    "data": {"url": "https://tmpfiles.org/123/final.mp4"},
+                }),
+                Mock(status_code=200, json=lambda: {"ok": True}),
+            ])
+            deliver_video(video, "test-token", "123", post=post)
+        self.assertEqual(post.call_count, 3)
+        self.assertEqual(post.call_args_list[1].args[0], "https://tmpfiles.org/api/v1/upload")
+        self.assertEqual(post.call_args.args[0], "https://api.telegram.org/bottest-token/sendMessage")
+
+
 if __name__ == "__main__":
     unittest.main()
