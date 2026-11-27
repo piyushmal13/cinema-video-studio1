@@ -41,6 +41,9 @@ jobs:
       - name: Inspect available compute without downloading models
         run: python scripts/hardware_doctor.py --output out/hardware_report.json
 
+      - name: Inspect model admission without downloading weights
+        run: python scripts/model_router.py --output out/model_admission.json
+
       - name: Install Remotion Engine and Python Audio Tools
         run: |
           npm ci
@@ -92,6 +95,7 @@ jobs:
           name: cinema-production-telemetry-${{ github.run_id }}
           path: |
             out/hardware_report.json
+            out/model_admission.json
             out/production_ledger.jsonl
           if-no-files-found: ignore
           retention-days: 14
