@@ -250,6 +250,91 @@ def build_style_brief(video_path: str | Path | None, image_paths: list[str], out
     return report
 
 
+
+def reference_prompt_context(report_path: str | Path) -> str:
+    """Turn measured reference cues into concise, non-copying editorial instructions."""
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    cues = []
+    video = report.get("video") or {}
+    if video.get("available"):
+        cues.append(
+            f"Reference editing grammar: {video.get('orientation')} {video.get('width')}x{video.get('height')}, "
+            f"{video.get('duration_sec')} seconds."
+        )
+        pace = report.get("average_shot_length_sec")
+        if pace:
+            cues.append(f"Use approximately {pace:.2f}s average shot rhythm as a pacing reference, not a fixed template.")
+        cuts = report.get("scene_cuts_sec") or []
+        if cuts:
+            cues.append(f"Reference contains about {len(cuts) + 1} detected shots; vary shot scale and transition timing.")
+    for image in (report.get("reference_images") or [])[:5]:
+        vision = image.get("vision_description")
+        if isinstance(vision, dict):
+            subject = vision.get("subject")
+            composition = vision.get("composition")
+            action = vision.get("action")
+            if subject:
+                cues.append(f"Supplied image subject: {subject}.")
+            if composition:
+                cues.append(f"Reference composition: {composition}.")
+            if action:
+                cues.append(f"Visible action: {action}.")
+        elif image.get("orientation"):
+            cues.append(f"Supplied reference image orientation: {image['orientation']}.")
+    if cues:
+        cues.append(
+            "Use the references as original visual direction and supplied source assets; "
+            "do not copy another creator's exact sequence, wording, footage or audio."
+        )
+    return "\n".join(cues)[:1800]
+
+
+def prepare_reference_images(
+    scenes: list[dict[str, Any]], manifest_path: str | Path,
+    orientation: str, public_dir: str | Path = "public",
+) -> dict[int, str]:
+    """Fit a supplied image and assign it to the most relevant storyboard scene."""
+    try:
+        manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if manifest.get("kind") != "image" or not manifest.get("path"):
+        return {}
+    source = Path(str(manifest["path"]))
+    if not source.is_file() or not scenes:
+        return {}
+    width, height = (1080, 1920) if orientation == "vertical" else (1920, 1080)
+    target = Path(public_dir) / "media" / "user_reference_01.jpg"
+    crop = smart_crop_image(source, target, width, height)
+    if not crop.get("ok"):
+        return {}
+    # Prefer a scene whose shot description overlaps the vision model's subject terms.
+    report_path = Path("out/reference_style.json")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        image = (report.get("reference_images") or [{}])[0]
+        vision = image.get("vision_description") or {}
+        subject_text = " ".join(
+            str(vision.get(key, "")) for key in ("subject", "visible_objects", "action")
+        )
+    except (OSError, ValueError, AttributeError):
+        subject_text = ""
+    tokens = {
+        token.casefold() for token in re.findall(r"[A-Za-z0-9]{3,}", subject_text)
+    }
+    scores = []
+    for index, scene in enumerate(scenes):
+        scene_text = " ".join(str(scene.get(key, "")) for key in ("headline", "kicker", "visualQuery", "subline"))
+        scene_tokens = {token.casefold() for token in re.findall(r"[A-Za-z0-9]{3,}", scene_text)}
+        scores.append((len(tokens & scene_tokens), index))
+    best_score, best_index = max(scores, default=(0, 0))
+    if not best_score:
+        best_index = 0
+    return {best_index: str(target.relative_to(public_dir)).replace("\\", "/")}
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", help="JSON manifest produced by fetch_telegram_reference.py")
