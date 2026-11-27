@@ -28,7 +28,7 @@ function getReferenceAttachment(message) {
     ? { file_id: photo.file_id, file_unique_id: photo.file_unique_id, kind: "image", mime_type: "image/jpeg", file_size: photo.file_size }
     : message.video
       ? { ...message.video, kind: "video", mime_type: message.video.mime_type || "video/mp4" }
-      : message.document && /^(image\/|video\/)/i.test(message.document.mime_type || "")
+      : message.document
         ? { ...message.document, kind: (message.document.mime_type || "").startsWith("image/") ? "image" : "video" }
         : null;
   if (!candidate || !candidate.file_id) return null;
