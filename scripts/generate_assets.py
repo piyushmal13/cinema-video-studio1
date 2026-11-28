@@ -1738,7 +1738,8 @@ def main():
     narration = sanitize_narration(narration_source)
     scenes = diversify_scenes(storyboard.get("scenes", []))
     scenes = assign_visual_language(scenes, topic_kind, JOB_ID, orientation)
-    SCENE_MEDIA_FILES.clear()\n    SCENE_MEDIA_ATTRIBUTION.clear()
+    SCENE_MEDIA_FILES.clear()
+    SCENE_MEDIA_ATTRIBUTION.clear()
     if not scenes:
         raise RuntimeError("Creative director returned no usable scenes.")
 
