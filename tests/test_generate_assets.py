@@ -510,7 +510,7 @@ class GenerateAssetsTests(unittest.TestCase):
                     patch.object(generate_assets, "_request_with_retry", return_value=response) as request,
                     patch.object(
                         generate_assets, "_download_bounded",
-                        side_effect=lambda url, path: (open(path, "wb").write(b"\\xff\\xd8\\xff" + b"x" * 6000) > 0),
+                        side_effect=lambda url, path: (open(path, "wb").write(b"\xff\xd8\xff" + b"x" * 6000) > 0),
                     ) as download,
                 ):
                     result = generate_assets.try_openverse_photo("gold bars secure vault", 2, "vertical")
