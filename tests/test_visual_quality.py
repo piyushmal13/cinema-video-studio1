@@ -34,3 +34,31 @@ class VisualQualityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_reports_and_can_enforce_low_media_coverage(self):
+        scenes = [
+            {"mediaKind": "image", "mediaFile": "a.jpg"},
+            {"mediaKind": "none", "mediaMode": "graphic"},
+            {"mediaKind": "none", "mediaMode": "graphic"},
+            {"mediaKind": "none", "mediaMode": "graphic"},
+            {"mediaKind": "none", "mediaMode": "graphic"},
+        ]
+        report = audit_visual_plan(scenes, ".", minimum_media_ratio=0.60)
+        self.assertEqual(report["media_backed_scenes"], 1)
+        self.assertEqual(report["media_coverage_ratio"], 0.2)
+        self.assertEqual(report["intentionally_graphic_scenes"], 4)
+        self.assertTrue(any("Media coverage is 1/5 scenes" in item for item in report["warnings"]))
+
+        enforced = audit_visual_plan(
+            scenes, ".", minimum_media_ratio=0.60, enforce_media_ratio=True
+        )
+        self.assertFalse(enforced["passed"])
+        self.assertTrue(any("required minimum is 60%" in item for item in enforced["errors"]))
+
+    def test_rejects_scene_media_path_traversal(self):
+        report = audit_visual_plan(
+            [{"mediaKind": "image", "mediaFile": "../outside.jpg"}], "."
+        )
+        self.assertFalse(report["passed"])
+        self.assertTrue(any("escapes the public directory" in item for item in report["errors"]))
