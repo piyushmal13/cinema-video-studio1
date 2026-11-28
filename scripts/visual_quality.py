@@ -9,6 +9,25 @@ from pathlib import Path
 from typing import Any
 
 
+def _has_valid_media_signature(path: Path) -> bool:
+    """Reject non-media payloads before counting an asset as visual coverage."""
+    try:
+        with path.open("rb") as media_file:
+            header = media_file.read(32)
+    except OSError:
+        return False
+    suffix = path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return header.startswith(b"\\xff\\xd8\\xff")
+    if suffix == ".png":
+        return header.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+    if suffix == ".webp":
+        return header.startswith(b"RIFF") and b"WEBP" in header
+    if suffix == ".mp4":
+        return b"ftyp" in header
+    return False
+
+
 def audit_visual_plan(
     scenes: list[dict[str, Any]],
     public_dir: str | Path = "public",
@@ -66,7 +85,7 @@ def audit_visual_plan(
             except ValueError:
                 errors.append(f"Scene media path escapes the public directory: {relative}")
                 continue
-            if not path.is_file() or path.stat().st_size <= 0:
+            if not path.is_file() or path.stat().st_size <= 0 or not _has_valid_media_signature(path):
                 missing_files.append(relative)
                 continue
             valid_scene_asset = True
