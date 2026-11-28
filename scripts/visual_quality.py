@@ -20,7 +20,7 @@ def _has_valid_media_signature(path: Path) -> bool:
     if suffix in {".jpg", ".jpeg"}:
         return header.startswith(b"\xff\xd8\xff")
     if suffix == ".png":
-        return header.startswith(b"\x89PNG\r\n\\x1a\n")
+        return header.startswith(b"\x89PNG\r\n\x1a\n")
     if suffix == ".webp":
         return header.startswith(b"RIFF") and b"WEBP" in header
     if suffix == ".mp4":
