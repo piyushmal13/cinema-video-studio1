@@ -143,17 +143,10 @@ You can now send a reference photo or video to the Telegram bot with a caption d
 The bot requires the existing `TELEGRAM_BOT_TOKEN` GitHub secret. Semantic image understanding uses the existing `GEMINI_API_KEY` when available (model override: `CINEMA_REFERENCE_VISION_MODEL` or `GEMINI_MODEL`); this sends a resized reference image to Google's API and consumes its quota. If no Gemini key is supplied, configure a private Ollama vision endpoint with `CINEMA_VISION_MODEL`. Without either vision provider, the pipeline uses metadata and a conservative crop heuristic. This is not yet multi-image album ingestion, and the system should still be reviewed for clipped logos/text before commercial delivery.
 
 
-## IFXTrades explainer production profile
+## Brand selection
 
-The Telegram production workflow now enables the IFXTrades brand profile by default:
-- Obsidian/navy backgrounds, white primary type and restrained IFX gold accents.
-- Brand tag positioned in a dedicated top safe area rather than a full-width banner.
-- Captions moved into a reserved bottom safe area, with fewer words per beat and a compact dark backing.
-- Short scene transitions to reduce cross-scene title collisions.
-- Responsive headline fitting and cleaner system-map layouts.
-- The opening scene now receives its own transition sound cue; voice remains foregrounded by side-chain ducking.
+Telegram production is brand-neutral by default. IFXTrades branding and research are enabled only when the current brief explicitly requests IFXTrades / IndiaFXTrades or supplies an explicit brand option. The render workflow does not inject an IFX profile into unrelated topics.
 
-An explicit request to omit IFXTrades branding still takes precedence over the workflow default.
 
 ## Render quality gate
 
@@ -164,3 +157,59 @@ Before Telegram delivery, the workflow now runs \`scripts/render_quality_gate.py
 - Tesseract samples the rendered MP4 and fails the job if OCR detects materially overlapping text boxes.
 
 OCR is a practical automated screen, not a substitute for a human creative review. The report is saved as \`out/render_quality_report.json\` with the production telemetry artifact.
+
+
+## Telegram-first production machine: deployment and operation
+
+**The Telegram bot is the production trigger.** A message sent to the bot's private chat (or an authorized group where bot privacy settings permit it) is received by the Cloudflare Worker webhook. The Worker validates the request, creates a unique request ID and dispatches the `telegram_video_request` event to GitHub Actions. The workflow researches/directs the brief, generates media and voice, renders the MP4, runs quality gates, and sends the finished video or a failure notice back to the originating Telegram chat.
+
+LinkedIn is not a render trigger. Publishing to LinkedIn is a separate downstream action and is not performed automatically by sending a Telegram brief.
+
+### One-time Cloudflare setup
+
+1. Deploy `cloudflare-worker/worker.js` using the included `cloudflare-worker/wrangler.toml`.
+2. Create a KV namespace for chat context and duplicate-update protection:
+   ```bash
+   npx wrangler kv namespace create PROMPT_CONTEXT_KV
+   ```
+   Copy the returned namespace ID into the commented `[[kv_namespaces]]` block in `cloudflare-worker/wrangler.toml`, then deploy again.
+3. Set Worker secrets:
+   ```bash
+   npx wrangler secret put TELEGRAM_BOT_TOKEN --config cloudflare-worker/wrangler.toml
+   npx wrangler secret put GITHUB_PAT --config cloudflare-worker/wrangler.toml
+   npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config cloudflare-worker/wrangler.toml
+   ```
+   Configure `GITHUB_REPO` and `ALLOWED_CHAT_ID` as Worker variables, and bind `PROMPT_CONTEXT_KV` in Wrangler config.
+4. Configure the Telegram webhook using the deployed Worker URL and the exact same webhook secret:
+   ```bash
+   export TELEGRAM_BOT_TOKEN='your-bot-token'
+   export TELEGRAM_WEBHOOK_SECRET='the-same-secret-configured-on-the-worker'
+   export WORKER_URL='https://your-worker.your-subdomain.workers.dev/'
+   curl --fail-with-body --silent --show-error -X POST \
+     "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+     --data-urlencode "url=${WORKER_URL}" \
+     --data-urlencode "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
+     --data-urlencode 'allowed_updates=["message"]'
+   ```
+5. Check `GET https://your-worker.../healthz` for JSON with `status: ok`; check Telegram webhook state with `getWebhookInfo`.
+
+### Telegram group requirements
+
+- In a private bot chat, send any topic or use `/video your topic`.
+- In a group, add the bot and set BotFather `/setprivacy` to **Disable** if ordinary unaddressed text messages should trigger production. With privacy enabled, Telegram may only deliver commands, replies or messages that mention the bot.
+- Set `ALLOWED_CHAT_ID` to the exact authorized chat ID. Group IDs are commonly negative; do not use the private-chat ID if production requests come from a group.
+- Use `/id` in the intended chat to retrieve its chat ID. Never publish bot tokens, GitHub tokens or webhook secrets.
+
+### Operational checks
+
+- Send `/start` or `/help`: the bot should reply.
+- Send `/id`: confirm the authorized chat ID.
+- Send `/video Create a 30-second vertical explainer about ...`: the bot should acknowledge that the render is queued.
+- GitHub Actions should start from the `repository_dispatch` event named `telegram_video_request`.
+- On success, the finished MP4 (or a download link for a large file) returns to the same Telegram chat. On failure, the bot sends the run URL.
+- Duplicate Telegram webhook deliveries are ignored for seven days when KV is configured. Prompt context and de-duplication keys share that KV namespace.
+- `GET /healthz` confirms that the Worker is deployed; it does not prove GitHub, Telegram or media providers are healthy. Use `getWebhookInfo` and a real test brief for end-to-end validation.
+
+### Deployment boundary
+
+Repository changes and CI do not automatically deploy the Cloudflare Worker or change Telegram's webhook. Those external settings must be applied in Cloudflare and Telegram. Do not consider the bridge live until its health endpoint and a real Telegram-to-GitHub test both pass.

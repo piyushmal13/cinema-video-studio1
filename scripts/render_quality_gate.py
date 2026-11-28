@@ -36,10 +36,27 @@ def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.12) -> li
             x_overlap = max(0, min(first[3], second[3]) - max(first[1], second[1]))
             y_overlap = max(0, min(first[4], second[4]) - max(first[2], second[2]))
             intersection = x_overlap * y_overlap
-            smaller_area = min(
-                (first[3] - first[1]) * (first[4] - first[2]),
-                (second[3] - second[1]) * (second[4] - second[2]),
+            first_width, first_height = first[3] - first[1], first[4] - first[2]
+            second_width, second_height = second[3] - second[1], second[4] - second[2]
+            smaller_area = min(first_width * first_height, second_width * second_height)
+
+            # Tesseract can emit an over-wide word box that spans the next word
+            # on the same text baseline. This is an OCR segmentation artifact,
+            # not a visible collision (e.g. PRECISION's box extending across TODAY).
+            # Ignore only near-same-baseline pairs where one box horizontally
+            # contains the other; genuine vertical/title collisions still fail.
+            first_center_y = (first[2] + first[4]) / 2
+            second_center_y = (second[2] + second[4]) / 2
+            min_width = min(first_width, second_width)
+            horizontal_containment = bool(
+                min_width and x_overlap / min_width >= 0.95
             )
+            same_baseline = abs(first_center_y - second_center_y) <= 0.35 * max(
+                first_height, second_height
+            )
+            if horizontal_containment and same_baseline:
+                continue
+
             if smaller_area and intersection / smaller_area >= threshold:
                 collisions.append({"first": first[0], "second": second[0], "overlap_ratio": round(intersection / smaller_area, 3)})
     return collisions

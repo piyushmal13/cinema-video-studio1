@@ -1,0 +1,11 @@
+name = "cinema-telegram-bridge"
+main = "worker.js"
+compatibility_date = "2026-11-28"
+
+# Create a namespace with:
+# npx wrangler kv namespace create PROMPT_CONTEXT_KV
+# Then uncomment this block and replace the ID with the returned namespace ID.
+#
+# [[kv_namespaces]]
+# binding = "PROMPT_CONTEXT_KV"
+# id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"

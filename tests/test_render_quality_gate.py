@@ -11,6 +11,15 @@ class RenderQualityGateTests(unittest.TestCase):
         ]
         self.assertEqual(len(overlapping_boxes(rows)), 1)
 
+    def test_ignores_overwide_same_baseline_ocr_word_box(self):
+        # Tesseract may extend the first word's box over the next word even
+        # though both words are visibly side-by-side on one baseline.
+        rows = [
+            {"level": "5", "text": "PRECISION", "left": "150", "top": "902", "width": "240", "height": "22"},
+            {"level": "5", "text": "TODAY", "left": "253", "top": "898", "width": "51", "height": "37"},
+        ]
+        self.assertEqual(overlapping_boxes(rows), [])
+
     def test_does_not_flag_separate_text_lines(self):
         rows = [
             {"level": "5", "text": "TITLE", "left": "10", "top": "10", "width": "100", "height": "25"},
