@@ -8,11 +8,11 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-function makeRequest(message) {
+function makeRequest(message, updateId = undefined, secret = undefined) {
   return new Request("https://worker.example/webhook", {
     method: "POST",
-    body: JSON.stringify({ message }),
-    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, ...(updateId === undefined ? {} : { update_id: updateId }) }),
+    headers: { "Content-Type": "application/json", ...(secret ? { "X-Telegram-Bot-Api-Secret-Token": secret } : {}) },
   });
 }
 
@@ -223,4 +223,48 @@ test("rejects unsupported and oversized reference attachments", async () => {
   );
   assert.equal(oversized.status, 415);
   assert.match(messages.at(-1).text, /20 MB/i);
+});
+
+
+test("exposes a health endpoint without starting a render", async () => {
+  const response = await worker.fetch(new Request("https://worker.example/healthz"), makeEnv());
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    status: "ok",
+    service: "telegram-video-bridge",
+    trigger: "telegram-webhook",
+  });
+});
+
+test("rejects webhook requests with an invalid Telegram secret", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; return new Response(null, { status: 200 }); };
+  const response = await worker.fetch(
+    makeRequest({ chat: { id: 123 }, text: "Create a video" }, 991, "wrong-secret"),
+    makeEnv({ TELEGRAM_WEBHOOK_SECRET: "expected-secret" })
+  );
+  assert.equal(response.status, 401);
+  assert.equal(calls, 0);
+});
+
+test("deduplicates Telegram webhook retries using update_id", async () => {
+  const calls = [];
+  const values = new Map();
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: init?.body });
+    return new Response(null, { status: String(url).includes("dispatches") ? 204 : 200 });
+  };
+  const env = makeEnv({
+    PROMPT_CONTEXT_KV: {
+      async get(key) { return values.get(key) ?? null; },
+      async put(key, value) { values.set(key, value); },
+    },
+  });
+  const message = { chat: { id: 123 }, text: "/video Make a film about ocean science" };
+  const first = await worker.fetch(makeRequest(message, 70001), env);
+  const second = await worker.fetch(makeRequest(message, 70001), env);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(calls.filter((call) => call.url.includes("/dispatches")).length, 1);
+  assert.equal(values.get("telegram-update:70001"), "telegram-70001");
 });
