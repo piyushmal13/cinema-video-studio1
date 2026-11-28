@@ -42,7 +42,7 @@ class VisualQualityTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "a.jpg").write_bytes(b"\\xff\\xd8\\xff" + b"verified jpeg fixture")
+            (root / "a.jpg").write_bytes(b"\xff\xd8\xff" + b"verified jpeg fixture")
             report = audit_visual_plan(scenes, root, minimum_media_ratio=0.60)
             enforced = audit_visual_plan(
                 scenes, root, minimum_media_ratio=0.60, enforce_media_ratio=True
