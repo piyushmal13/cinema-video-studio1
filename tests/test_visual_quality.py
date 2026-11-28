@@ -10,7 +10,7 @@ class VisualQualityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             asset = root / "shared.jpg"
-            asset.write_bytes(b"same visual asset")
+            asset.write_bytes(b"\\xff\\xd8\\xff" + b"x" * 32)
             scenes = [
                 {"mediaKind": "image", "mediaFiles": ["shared.jpg"], "visualTreatment": "hero_full_bleed"},
                 {"mediaKind": "image", "mediaFile": "shared.jpg", "visualTreatment": "editorial_split"},
@@ -23,7 +23,7 @@ class VisualQualityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ("a.jpg", "b.jpg"):
-                (root / name).write_bytes(name.encode())
+                (root / name).write_bytes(b"\\xff\\xd8\\xff" + name.encode() + b"x" * 32)
             scenes = [
                 {"mediaKind": "image", "mediaFiles": ["a.jpg", "b.jpg"]},
                 {"mediaKind": "none"},
@@ -55,7 +55,7 @@ class VisualQualityTests(unittest.TestCase):
     def test_media_coverage_counts_only_existing_nonempty_assets(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "valid.jpg").write_bytes(b"valid image bytes")
+            (root / "valid.jpg").write_bytes(b"\\xff\\xd8\\xff" + b"valid image bytes")
             (root / "empty.jpg").write_bytes(b"")
             scenes = [
                 {"mediaKind": "image", "mediaFile": "valid.jpg"},
@@ -79,6 +79,19 @@ class VisualQualityTests(unittest.TestCase):
         self.assertFalse(report["passed"])
         self.assertEqual(report["media_backed_scenes"], 0)
         self.assertTrue(any("Media coverage is 0/1" in error for error in report["errors"]))
+
+    def test_rejects_non_image_payload_even_when_file_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "fake.jpg").write_bytes(b"this is not a jpeg")
+            report = audit_visual_plan(
+                [{"mediaKind": "image", "mediaFile": "fake.jpg"}],
+                root,
+                minimum_media_ratio=0.60,
+                enforce_media_ratio=True,
+            )
+        self.assertEqual(report["media_backed_scenes"], 0)
+        self.assertFalse(report["passed"])
 
     def test_rejects_scene_media_path_traversal(self):
         report = audit_visual_plan(
