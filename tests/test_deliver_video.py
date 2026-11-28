@@ -160,6 +160,27 @@ class TelegramDeliveryTests(unittest.TestCase):
         self.assertIn("A subject-specific market update", message)
         self.assertIn("within 48 hours", message)
 
+    def test_uses_durable_release_url_for_large_video(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "final.mp4"
+            video.write_bytes(b"x" * (UPLOAD_TARGET_BYTES + 1))
+            post = Mock(return_value=Mock(status_code=200, json=lambda: {"ok": True}))
+            deliver_video(
+                video, "test-token", "123", post=post,
+                download_url="https://github.com/piyushmal13/cinema-video-studio1/releases/download/cinema-run-1/final.mp4",
+            )
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(post.call_args.args[0], "https://api.telegram.org/bottest-token/sendMessage")
+        self.assertIn("no temporary expiry", post.call_args.kwargs["data"]["text"])
+        self.assertIn("releases/download/cinema-run-1/final.mp4", post.call_args.kwargs["data"]["text"])
+
+    def test_rejects_non_release_durable_download_url(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "final.mp4"
+            video.write_bytes(b"x" * (UPLOAD_TARGET_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, "GitHub Releases"):
+                deliver_video(video, "test-token", "123", post=Mock(), download_url="https://example.com/video.mp4")
+
     def test_reports_telegram_api_rejection(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             video = Path(temp_dir) / "final.mp4"
