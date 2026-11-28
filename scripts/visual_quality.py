@@ -33,8 +33,7 @@ def audit_visual_plan(
     if duplicate_queries:
         warnings.append(f"Repeated visual queries were found: {len(duplicate_queries)}")
 
-    files: list[str] = []
-    media_backed_scenes = 0
+    scene_media_files: list[tuple[int, list[str]]] = []
     intentionally_graphic_scenes = 0
     for index, scene in enumerate(scenes):
         if not isinstance(scene, dict):
@@ -51,10 +50,34 @@ def audit_visual_plan(
         sequence = scene.get("mediaFiles")
         if isinstance(sequence, list):
             scene_files.extend(item.strip() for item in sequence if isinstance(item, str) and item.strip())
-        scene_files = list(dict.fromkeys(scene_files))
-        if scene_files:
+        scene_media_files.append((index, list(dict.fromkeys(scene_files))))
+
+    files: list[str] = []
+    media_backed_scenes = 0
+    missing_files: list[str] = []
+    hashes: dict[str, list[str]] = {}
+    for scene_index, scene_files in scene_media_files:
+        valid_scene_asset = False
+        for relative in scene_files:
+            normalized = relative.replace("\\\\", "/")
+            path = (root / Path(*normalized.split("/"))).resolve()
+            try:
+                path.relative_to(root.resolve())
+            except ValueError:
+                errors.append(f"Scene media path escapes the public directory: {relative}")
+                continue
+            if not path.is_file() or path.stat().st_size <= 0:
+                missing_files.append(relative)
+                continue
+            valid_scene_asset = True
+            files.append(relative)
+            try:
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                hashes.setdefault(digest, []).append(relative)
+            except OSError as error:
+                warnings.append(f"Could not inspect scene media {relative}: {error}")
+        if valid_scene_asset:
             media_backed_scenes += 1
-            files.extend(scene_files)
 
     media_ratio = media_backed_scenes / len(scenes) if scenes else 0.0
     if scenes and media_ratio < minimum_media_ratio:
