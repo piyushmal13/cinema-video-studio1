@@ -17,7 +17,7 @@ except ImportError:
     from visual_quality import audit_render, audit_visual_plan
 
 
-def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.12) -> list[dict[str, Any]]:
+def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.30) -> list[dict[str, Any]]:
     words = []
     for row in rows:
         if str(row.get("level", "")) != "5" or not str(row.get("text", "")).strip():
@@ -26,6 +26,15 @@ def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.12) -> li
             left, top = int(row["left"]), int(row["top"])
             width, height = int(row["width"]), int(row["height"])
         except (KeyError, TypeError, ValueError):
+            continue
+        # Tesseract occasionally emits tiny, low-confidence fragments (for
+        # example a stray "A" or "5" inside a larger word box). Those fragments
+        # are not reliable evidence of an on-screen text collision.
+        try:
+            confidence = float(row.get("conf", ""))
+        except (TypeError, ValueError):
+            confidence = None
+        if confidence is not None and confidence < 60:
             continue
         if width > 0 and height > 0:
             words.append((str(row["text"]).strip(), left, top, left + width, top + height))
