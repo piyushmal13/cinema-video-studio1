@@ -140,6 +140,11 @@ def main() -> int:
             minimum_media_ratio=args.minimum_media_ratio,
             enforce_media_ratio=True,
         )
+        if video_data.get("degradedMode"):
+            plan.setdefault("errors", []).append(
+                "Storyboard was generated in degraded mode because primary AI providers were unavailable."
+            )
+            plan["passed"] = False
         critical_markers = (
             "Scene media is missing:",
             "Duplicate media files are reused",
