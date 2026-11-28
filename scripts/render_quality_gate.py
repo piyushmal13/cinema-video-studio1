@@ -38,9 +38,31 @@ def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.12) -> li
         if width > 0 and height > 0:
             words.append((text, left, top, left + width, top + height))
 
+    # Tesseract can emit a second, single-letter token from inside a correctly
+    # recognized word (for example "e" inside "Analysis"). These duplicate
+    # glyph detections are not independent text elements and create false
+    # collision reports. Keep standalone one-letter labels unless their center
+    # is already covered by another multi-character word box.
+    filtered_words = []
+    for index, word in enumerate(words):
+        text, left, top, right, bottom = word
+        if len(text) == 1 and text.isalpha():
+            center_x = (left + right) / 2
+            center_y = (top + bottom) / 2
+            duplicate_glyph = any(
+                other_index != index
+                and len(other[0]) > 1
+                and other[1] <= center_x <= other[3]
+                and other[2] <= center_y <= other[4]
+                for other_index, other in enumerate(words)
+            )
+            if duplicate_glyph:
+                continue
+        filtered_words.append(word)
+
     collisions = []
-    for index, first in enumerate(words):
-        for second in words[index + 1:]:
+    for index, first in enumerate(filtered_words):
+        for second in filtered_words[index + 1:]:
             x_overlap = max(0, min(first[3], second[3]) - max(first[1], second[1]))
             y_overlap = max(0, min(first[4], second[4]) - max(first[2], second[2]))
             intersection = x_overlap * y_overlap
