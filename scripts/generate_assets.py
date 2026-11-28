@@ -73,7 +73,7 @@ else:
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
 JOB_ID = os.environ.get("CINEMA_JOB_ID", "").strip() or str(time.time_ns())
-SCENE_MEDIA_FILES: dict[int, list[str]] = {}
+SCENE_MEDIA_FILES: dict[int, list[str]] = {}\nSCENE_MEDIA_ATTRIBUTION: dict[int, dict[str, str]] = {}
 
 os.makedirs("public/media", exist_ok=True)
 os.makedirs("out", exist_ok=True)
@@ -995,6 +995,69 @@ def _fetch_wikimedia_photo(query: str, idx: int, orientation: str) -> tuple[str,
     return "", "none"
 
 
+def try_openverse_photo(query: str, idx: int, orientation: str) -> tuple[str, str]:
+    """Fetch a strongly topic-matched CC0/PDM image from Openverse."""
+    if os.environ.get("CINEMA_OFFLINE") == "1":
+        return "", "none"
+    terms = _visual_subject_terms(query)
+    if not terms:
+        return "", "none"
+    response = _request_with_retry(
+        "https://api.openverse.org/v1/images/",
+        params={
+            "q": query[:200],
+            "license": "cc0,pdm",
+            "license_type": "commercial",
+            "page_size": 10,
+            "mature": "false",
+            "filter_dead": "true",
+        },
+        headers={"User-Agent": "CinemaVideoStudio/1.0 (open media search)"},
+        timeout=(5, 12),
+    )
+    results = response.json().get("results", [])
+    for item in results:
+        title = str(item.get("title", ""))
+        tags = item.get("tags", [])
+        tag_text = " ".join(
+            str(tag.get("name", "")) for tag in tags if isinstance(tag, dict)
+        )
+        if not _matches_visual_subject(f"{title} {tag_text}", query):
+            continue
+        license_name = str(item.get("license", "")).casefold()
+        if license_name not in {"cc0", "pdm"}:
+            continue
+        media_url = str(item.get("url", ""))
+        parsed = urllib.parse.urlparse(media_url)
+        if parsed.scheme != "https":
+            continue
+        extension = str(item.get("filetype", "")).lower().lstrip(".")
+        if extension not in {"jpg", "jpeg", "png", "webp"}:
+            extension = os.path.splitext(parsed.path)[1].lower().lstrip(".")
+        if extension not in {"jpg", "jpeg", "png", "webp"}:
+            continue
+        suffix = ".jpg" if extension == "jpeg" else f".{extension}"
+        relative_path = f"media/scene_{idx}_openverse{suffix}"
+        destination = os.path.join("public", relative_path.replace("/", os.sep))
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        if not _download_bounded(media_url, destination):
+            continue
+        if MediaAssetCache._asset_kind(Path(destination)) != "image":
+            Path(destination).unlink(missing_ok=True)
+            continue
+        SCENE_MEDIA_ATTRIBUTION[idx] = {
+            "title": title,
+            "creator": str(item.get("creator", "")),
+            "license": license_name,
+            "licenseUrl": str(item.get("license_url", "")),
+            "sourceUrl": str(item.get("foreign_landing_url", "")),
+            "provider": "Openverse",
+        }
+        print(f"Using Openverse {license_name} image for scene {idx}: {title}")
+        return relative_path, "image"
+    return "", "none"
+
+
 def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
     if os.environ.get("CINEMA_OFFLINE") == "1":
         return "", "none"
@@ -1072,6 +1135,13 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
         print(f"Flux returned no usable image for scene {idx}; trying Commons photography.")
     except (requests.RequestException, OSError, ValueError) as error:
         print(f"Flux image fallback on scene {idx}: {error}")
+
+    try:
+        openverse_file, openverse_kind = try_openverse_photo(query, idx, orientation)
+        if openverse_file:
+            return openverse_file, openverse_kind
+    except (requests.RequestException, ValueError, TypeError, OSError) as error:
+        print(f"Openverse photo fallback on scene {idx}: {error}")
 
     try:
         return _fetch_wikimedia_photo(query, idx, orientation)
@@ -1666,7 +1736,7 @@ def main():
     narration = sanitize_narration(narration_source)
     scenes = diversify_scenes(storyboard.get("scenes", []))
     scenes = assign_visual_language(scenes, topic_kind, JOB_ID, orientation)
-    SCENE_MEDIA_FILES.clear()
+    SCENE_MEDIA_FILES.clear()\n    SCENE_MEDIA_ATTRIBUTION.clear()
     if not scenes:
         raise RuntimeError("Creative director returned no usable scenes.")
 
@@ -1746,6 +1816,8 @@ def main():
         scene["mediaFiles"] = SCENE_MEDIA_FILES.get(
             idx, [media_file] if media_file else []
         )
+        if idx in SCENE_MEDIA_ATTRIBUTION:
+            scene["mediaAttribution"] = SCENE_MEDIA_ATTRIBUTION[idx]
         scene["visualSeed"] = stable_visual_seed(JOB_ID, idx, query)
         timed_scenes.append(scene)
 
