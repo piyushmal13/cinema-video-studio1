@@ -44,14 +44,13 @@ class VisualQualityTests(unittest.TestCase):
             root = Path(directory)
             (root / "a.jpg").write_bytes(b"\\xff\\xd8\\xff" + b"verified jpeg fixture")
             report = audit_visual_plan(scenes, root, minimum_media_ratio=0.60)
+            enforced = audit_visual_plan(
+                scenes, root, minimum_media_ratio=0.60, enforce_media_ratio=True
+            )
         self.assertEqual(report["media_backed_scenes"], 1)
         self.assertEqual(report["media_coverage_ratio"], 0.2)
         self.assertEqual(report["intentionally_graphic_scenes"], 4)
         self.assertTrue(any("Media coverage is 1/5 scenes" in item for item in report["warnings"]))
-
-        enforced = audit_visual_plan(
-            scenes, ".", minimum_media_ratio=0.60, enforce_media_ratio=True
-        )
         self.assertFalse(enforced["passed"])
         self.assertTrue(any("required minimum is 60%" in item for item in enforced["errors"]))
 
