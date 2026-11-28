@@ -23,6 +23,13 @@ class RenderQualityGateTests(unittest.TestCase):
         self.assertEqual(overlapping_boxes(rows), [])
 
 
+    def test_ignores_punctuation_only_ocr_tokens(self):
+        rows = [
+            {"level": "5", "text": "CHART", "left": "10", "top": "10", "width": "100", "height": "30"},
+            {"level": "5", "text": "’", "left": "20", "top": "15", "width": "20", "height": "15"},
+        ]
+        self.assertEqual(overlapping_boxes(rows), [])
+
     def test_quality_gate_cli_help_has_no_duplicate_video_data_option(self):
         import subprocess
         import sys
