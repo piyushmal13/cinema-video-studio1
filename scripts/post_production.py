@@ -82,6 +82,21 @@ def build_social_package(data: dict[str, Any]) -> dict[str, Any]:
         },
         "tiktok": (title + "\\n\\n" + " ".join(hashtags))[:2200],
     }
+    media_attributions = []
+    seen_attributions = set()
+    for scene in data.get("scenes", []):
+        attribution = scene.get("mediaAttribution") if isinstance(scene, dict) else None
+        if not isinstance(attribution, dict):
+            continue
+        identity = (
+            str(attribution.get("sourceUrl", "")),
+            str(attribution.get("licenseUrl", "")),
+        )
+        if identity in seen_attributions:
+            continue
+        seen_attributions.add(identity)
+        media_attributions.append(attribution)
+
     return {
         "title": title,
         "description": description,
@@ -97,6 +112,7 @@ def build_social_package(data: dict[str, Any]) -> dict[str, Any]:
         "degraded_mode": bool(data.get("degradedMode")),
         "notes": notes,
         "sources": source_urls,
+        "media_attributions": media_attributions,
     }
 
 
