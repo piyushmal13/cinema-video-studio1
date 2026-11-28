@@ -139,6 +139,8 @@ jobs:
             out/model_admission.json
             out/production_ledger.jsonl
             out/render_quality_report.json
+            public/video_data.json
+            public/media/**
             out/reference_style.json
             out/reference_frames/**
             out/reference_crops/**
