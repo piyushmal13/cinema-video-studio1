@@ -90,6 +90,26 @@ class PostProductionTests(unittest.TestCase):
             saved = json.loads((root / "out" / "social_package.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["render_quality"]["duration_sec"], 42.0)
 
+    def test_open_media_attribution_is_preserved_in_publishing_package(self):
+        package = build_social_package({
+            "title": "Gold in Focus",
+            "narration": "A focused visual explainer.",
+            "topicKind": "explainer",
+            "format": "vertical",
+            "scenes": [
+                {"mediaAttribution": {
+                    "title": "Gold bars in a vault",
+                    "creator": "Open Media Creator",
+                    "license": "cc0",
+                    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+                    "sourceUrl": "https://example.org/gold-vault",
+                    "provider": "Openverse",
+                }},
+            ],
+        })
+        self.assertEqual(len(package["media_attributions"]), 1)
+        self.assertEqual(package["media_attributions"][0]["provider"], "Openverse")
+
     def test_degraded_mode_is_disclosed_in_package_metadata(self):
         package = build_social_package({
             "title": "A Story",
