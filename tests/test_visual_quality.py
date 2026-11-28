@@ -10,7 +10,7 @@ class VisualQualityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             asset = root / "shared.jpg"
-            asset.write_bytes(b"\\xff\\xd8\\xff" + b"x" * 32)
+            asset.write_bytes(b"\xff\xd8\xff" + b"x" * 32)
             scenes = [
                 {"mediaKind": "image", "mediaFiles": ["shared.jpg"], "visualTreatment": "hero_full_bleed"},
                 {"mediaKind": "image", "mediaFile": "shared.jpg", "visualTreatment": "editorial_split"},
@@ -23,7 +23,7 @@ class VisualQualityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ("a.jpg", "b.jpg"):
-                (root / name).write_bytes(b"\\xff\\xd8\\xff" + name.encode() + b"x" * 32)
+                (root / name).write_bytes(b"\xff\xd8\xff" + name.encode() + b"x" * 32)
             scenes = [
                 {"mediaKind": "image", "mediaFiles": ["a.jpg", "b.jpg"]},
                 {"mediaKind": "none"},
@@ -55,7 +55,7 @@ class VisualQualityTests(unittest.TestCase):
     def test_media_coverage_counts_only_existing_nonempty_assets(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "valid.jpg").write_bytes(b"\\xff\\xd8\\xff" + b"valid image bytes")
+            (root / "valid.jpg").write_bytes(b"\xff\xd8\xff" + b"valid image bytes")
             (root / "empty.jpg").write_bytes(b"")
             scenes = [
                 {"mediaKind": "image", "mediaFile": "valid.jpg"},
