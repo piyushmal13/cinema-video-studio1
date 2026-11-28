@@ -32,10 +32,6 @@ class VisualQualityTests(unittest.TestCase):
             self.assertEqual(report["media_backed_scenes"], 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_reports_and_can_enforce_low_media_coverage(self):
         scenes = [
             {"mediaKind": "image", "mediaFile": "a.jpg"},
@@ -62,3 +58,7 @@ if __name__ == "__main__":
         )
         self.assertFalse(report["passed"])
         self.assertTrue(any("escapes the public directory" in item for item in report["errors"]))
+
+
+if __name__ == "__main__":
+    unittest.main()
