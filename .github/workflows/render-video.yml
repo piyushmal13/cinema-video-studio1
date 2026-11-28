@@ -16,6 +16,8 @@ on:
 jobs:
   produce-and-deliver:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -143,10 +145,39 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Publish large MP4 as a durable direct-download release asset
+        id: publish-download
+        if: success() && hashFiles('out/final.mp4') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          SIZE=$(stat -c%s out/final.mp4)
+          LIMIT=$((47 * 1024 * 1024))
+          if [ "$SIZE" -le "$LIMIT" ]; then
+            echo "download_url=" >> "$GITHUB_OUTPUT"
+            echo "Video is small enough for native Telegram delivery."
+            exit 0
+          fi
+          MAX=$((2 * 1024 * 1024 * 1024))
+          if [ "$SIZE" -gt "$MAX" ]; then
+            echo "Video exceeds GitHub's 2 GiB per-release-asset limit; using the temporary host fallback."
+            echo "download_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TAG="cinema-run-${RUN_ID}"
+          gh release create "$TAG" out/final.mp4 \
+            --title "Cinema Video ${RUN_ID}" \
+            --notes "Quality-gated Cinema Video Studio render. Workflow run: https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}" \
+            --latest=false
+          echo "download_url=https://github.com/${REPOSITORY}/releases/download/${TAG}/final.mp4" >> "$GITHUB_OUTPUT"
+
       - name: Deliver Film and Generated Caption to Telegram Phone Chat
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ github.event.client_payload.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          CINEMA_DOWNLOAD_URL: ${{ steps.publish-download.outputs.download_url }}
         run: python scripts/deliver_video.py --video out/final.mp4 --caption-file out/telegram_caption.txt --thumbnail out/cover.jpg
 
       - name: Notify Telegram when generation fails
