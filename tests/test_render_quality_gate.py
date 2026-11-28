@@ -32,6 +32,33 @@ class RenderQualityGateTests(unittest.TestCase):
         self.assertEqual(overlapping_boxes(rows), [])
 
 
+
+    def test_ignores_minor_adjacent_line_box_overlap_from_real_render(self):
+        # Frame 0022: the bottoms of Tesseract's "se" box and the next-line
+        # "ki" box overlap by only ~28%; the rendered glyphs remain readable.
+        rows = [
+            {"level": "5", "text": "se", "left": "153", "top": "363", "width": "39", "height": "65", "conf": "93.1"},
+            {"level": "5", "text": "ki", "left": "155", "top": "419", "width": "34", "height": "32", "conf": "92.3"},
+        ]
+        self.assertEqual(overlapping_boxes(rows), [])
+
+    def test_ignores_low_confidence_tesseract_fragments(self):
+        # Frames 0042-0046: Tesseract sees a tiny, low-confidence "A"/"5"
+        # fragment at the edge between "Stop-loss" and "Risk"; not a real word.
+        rows = [
+            {"level": "5", "text": "Stop-loss", "left": "288", "top": "378", "width": "157", "height": "32", "conf": "90.9"},
+            {"level": "5", "text": "A", "left": "382", "top": "409", "width": "10", "height": "7", "conf": "43.1"},
+            {"level": "5", "text": "Risk", "left": "360", "top": "411", "width": "73", "height": "26", "conf": "96.4"},
+        ]
+        self.assertEqual(overlapping_boxes(rows), [])
+
+    def test_still_detects_substantial_real_overlap_with_confidence(self):
+        rows = [
+            {"level": "5", "text": "ENTRY", "left": "10", "top": "10", "width": "100", "height": "30", "conf": "95"},
+            {"level": "5", "text": "TRADER", "left": "40", "top": "18", "width": "100", "height": "30", "conf": "94"},
+        ]
+        self.assertEqual(len(overlapping_boxes(rows)), 1)
+
     def test_quality_gate_cli_help_has_no_duplicate_video_data_option(self):
         import subprocess
         import sys
