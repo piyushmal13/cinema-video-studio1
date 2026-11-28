@@ -1,6 +1,7 @@
 const CONTEXT_TTL_SECONDS = 30 * 24 * 60 * 60;
 const MAX_CONTEXT_PROMPTS = 4;
 const MAX_PROMPT_LENGTH = 3500;
+const UPDATE_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 async function sendMessage(env, chatId, text) {
   if (!env.TELEGRAM_BOT_TOKEN) {
@@ -90,11 +91,30 @@ function getHistory(value) {
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    if (request.method === "GET") {
+      if (url.pathname === "/healthz") {
+        return Response.json({ status: "ok", service: "telegram-video-bridge", trigger: "telegram-webhook" });
+      }
+      return new Response("Cinema Telegram Bridge Online. POST / for Telegram updates; GET /healthz for health.");
+    }
     if (request.method !== "POST") {
-      return new Response("Ifxreelsm_bot Cinema Bridge Online");
+      return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, POST" } });
     }
 
-    const update = await request.json();
+    if (env.TELEGRAM_WEBHOOK_SECRET) {
+      const suppliedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
+      if (suppliedSecret !== env.TELEGRAM_WEBHOOK_SECRET) {
+        return new Response("Unauthorized webhook", { status: 401 });
+      }
+    }
+
+    let update;
+    try {
+      update = await request.json();
+    } catch {
+      return new Response("Invalid JSON", { status: 400 });
+    }
     const message = update.message;
     if (!message) {
       return new Response("OK");
@@ -154,7 +174,18 @@ export default {
         ? "Create an original video using the attached reference image as a visual asset. Understand its subject and composition, preserve important details, and build a relevant story around it."
         : "Create an original video guided by the attached reference footage. Analyze its editing rhythm, shot structure, framing and visual mood; do not copy its footage or audio."
     );
-    const requestId = crypto.randomUUID();
+    const telegramUpdateId = Number.isSafeInteger(update.update_id) ? update.update_id : null;
+    const requestId = telegramUpdateId === null ? crypto.randomUUID() : `telegram-${telegramUpdateId}`;
+    if (telegramUpdateId !== null && env.PROMPT_CONTEXT_KV) {
+      try {
+        const dedupeKey = `telegram-update:${telegramUpdateId}`;
+        if (await env.PROMPT_CONTEXT_KV.get(dedupeKey)) {
+          return new Response("Duplicate update ignored");
+        }
+      } catch (error) {
+        console.error("Could not check Telegram update deduplication key.", error);
+      }
+    }
     if (!prompt) {
       await sendMessage(env, chatId, "Add a topic, story, or script after the command.");
       return new Response("Prompt required", { status: 400 });
@@ -229,6 +260,18 @@ export default {
         `The render could not be queued (GitHub returned ${response.status}). Please try again later.`
       );
       return new Response("GitHub dispatch failed", { status: 502 });
+    }
+
+    if (telegramUpdateId !== null && env.PROMPT_CONTEXT_KV) {
+      try {
+        await env.PROMPT_CONTEXT_KV.put(
+          `telegram-update:${telegramUpdateId}`,
+          requestId,
+          { expirationTtl: UPDATE_DEDUPE_TTL_SECONDS }
+        );
+      } catch (error) {
+        console.error("Could not save Telegram update deduplication key.", error);
+      }
     }
 
     if (env.PROMPT_CONTEXT_KV) {
