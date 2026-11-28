@@ -711,7 +711,13 @@ def _matches_visual_subject(title: str, query: str) -> bool:
     if _REJECT_MEDIA_TERMS.search(title):
         return False
     terms = _visual_subject_terms(query)
-    return bool(terms) and any(term in title.lower() for term in terms)
+    title_text = re.sub(r"[^a-z0-9]+", " ", title.casefold())
+    matched = {
+        term for term in terms
+        if re.search(rf"\\b{re.escape(term)}\\b", title_text)
+    }
+    minimum_matches = 1 if len(terms) <= 2 else 2
+    return bool(terms) and len(matched) >= minimum_matches
 
 
 def _license_is_reusable(metadata: dict) -> bool:
@@ -842,7 +848,7 @@ def try_archive_org_video(
             "https://archive.org/advancedsearch.php",
             params={
                 "q": f"mediatype:movies AND ({search_terms})",
-                "fl[]": ["identifier"],
+                "fl[]": ["identifier", "title", "description", "subject"],
                 "rows": 5,
                 "page": 1,
                 "output": "json",
@@ -864,7 +870,15 @@ def try_archive_org_video(
             )
             metadata_response.raise_for_status()
             metadata = metadata_response.json()
-            if not _license_is_reusable(metadata.get("metadata", {})):
+            item_metadata = metadata.get("metadata", {})
+            searchable_metadata = " ".join(
+                str(item_metadata.get(field, ""))
+                for field in ("title", "description", "subject")
+            )
+            if not _matches_visual_subject(searchable_metadata, query):
+                print(f"Skipping Archive.org item without a strong topic match: {identifier}")
+                continue
+            if not _license_is_reusable(item_metadata):
                 continue
             candidates = [
                 entry for entry in metadata.get("files", [])
