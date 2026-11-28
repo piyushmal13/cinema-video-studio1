@@ -74,7 +74,8 @@ else:
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
 JOB_ID = os.environ.get("CINEMA_JOB_ID", "").strip() or str(time.time_ns())
-SCENE_MEDIA_FILES: dict[int, list[str]] = {}\nSCENE_MEDIA_ATTRIBUTION: dict[int, dict[str, str]] = {}
+SCENE_MEDIA_FILES: dict[int, list[str]] = {}
+SCENE_MEDIA_ATTRIBUTION: dict[int, dict[str, str]] = {}
 
 os.makedirs("public/media", exist_ok=True)
 os.makedirs("out", exist_ok=True)
