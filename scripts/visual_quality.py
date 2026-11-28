@@ -56,10 +56,10 @@ def audit_visual_plan(
     media_backed_scenes = 0
     missing_files: list[str] = []
     hashes: dict[str, list[str]] = {}
-    for scene_index, scene_files in scene_media_files:
+    for _scene_index, scene_files in scene_media_files:
         valid_scene_asset = False
         for relative in scene_files:
-            normalized = relative.replace("\\\\", "/")
+            normalized = relative.replace("\\", "/")
             path = (root / Path(*normalized.split("/"))).resolve()
             try:
                 path.relative_to(root.resolve())
@@ -102,24 +102,6 @@ def audit_visual_plan(
     if adjacent_repeats:
         warnings.append(f"Adjacent scenes repeat the same composition {adjacent_repeats} time(s).")
 
-    hashes: dict[str, list[str]] = {}
-    missing_files: list[str] = []
-    for relative in files:
-        normalized = relative.replace("\\", "/")
-        path = (root / Path(*normalized.split("/"))).resolve()
-        try:
-            path.relative_to(root.resolve())
-        except ValueError:
-            errors.append(f"Scene media path escapes the public directory: {relative}")
-            continue
-        if not path.is_file():
-            missing_files.append(relative)
-            continue
-        try:
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            hashes.setdefault(digest, []).append(relative)
-        except OSError as error:
-            warnings.append(f"Could not inspect scene media {relative}: {error}")
     if missing_files:
         warnings.append(f"Scene media is missing: {', '.join(missing_files[:10])}")
     duplicates = [paths for paths in hashes.values() if len(paths) > 1]
