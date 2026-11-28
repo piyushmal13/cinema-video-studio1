@@ -526,6 +526,8 @@ class GenerateAssetsTests(unittest.TestCase):
         metadata = Mock()
         metadata.json.return_value = {
             "metadata": {
+                "title": "Gold market trading film",
+                "description": "Gold bars and gold market trading",
                 "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/"
             },
             "files": [{"name": "gold-market.mp4", "size": "1200000"}],
