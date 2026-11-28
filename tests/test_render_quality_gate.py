@@ -42,7 +42,7 @@ class RenderQualityGateTests(unittest.TestCase):
     def test_still_detects_real_single_character_collision_outside_a_word(self):
         rows = [
             {"level": "5", "text": "A", "left": "10", "top": "10", "width": "30", "height": "30"},
-            {"level": "5", "text": "TITLE", "left": "20", "top": "15", "width": "100", "height": "30"},
+            {"level": "5", "text": "TITLE", "left": "30", "top": "15", "width": "100", "height": "30"},
         ]
         self.assertEqual(len(overlapping_boxes(rows)), 1)
 
