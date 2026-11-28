@@ -479,7 +479,7 @@ class GenerateAssetsTests(unittest.TestCase):
         sleep.assert_not_called()
 
     def test_wikimedia_uses_only_topic_matched_public_domain_or_cc0_photos(self):
-        flux = Mock(status_code=503, content=b"", headers={"Content-Type": "text/plain"})
+        flux = Mock(status_code=503, content=b"", headers={"Content-Type": "text/plain", "Retry-After": "0"})
         pages = {
             "1": {
                 "title": "File:Gold bars in a vault.jpg",
@@ -509,7 +509,7 @@ class GenerateAssetsTests(unittest.TestCase):
                     patch.object(generate_assets, "_commons_pages", return_value=pages),
                     patch.object(generate_assets, "try_archive_org_video", return_value=False),
                     patch.object(generate_assets, "try_wikimedia_video", return_value=False),
-                    patch.object(generate_assets.requests, "get", side_effect=[flux, photo]),
+                    patch.object(generate_assets.requests, "get", side_effect=[flux, flux, flux, photo]),
                 ):
                     result = generate_assets.fetch_broll_or_ai_visual(
                         "gold bars in a vault", 1, "vertical"
