@@ -588,7 +588,7 @@ def try_generate_ai_video_clip(
         return False
     cache = MediaAssetCache()
     cached = cache.get(
-        prompt, orientation, expected_kind="video", variation=JOB_ID
+        prompt, orientation, expected_kind="video", variation=""
     )
     if cached:
         cached_path, _ = cached
@@ -612,7 +612,7 @@ def try_generate_ai_video_clip(
             if candidate.suffix.lower() == ".mp4" and _is_valid_mp4(str(candidate)):
                 shutil.copyfile(candidate, out_mp4)
                 if _is_valid_mp4(out_mp4):
-                    cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
+                    cache.store(prompt, orientation, out_mp4, "video", variation="")
                     print(f"Generated scene {idx} motion with configured ComfyUI.")
                     return True
     except Exception as error:
@@ -641,7 +641,7 @@ def try_generate_ai_video_clip(
             with open(out_mp4, "wb") as output_file:
                 output_file.write(response.content)
             if _is_valid_mp4(out_mp4):
-                cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
+                cache.store(prompt, orientation, out_mp4, "video", variation="")
                 print(f"Generated scene {idx} video with Pollinations.")
                 return True
         print(f"Pollinations video unavailable for scene {idx}: HTTP {response.status_code}.")
@@ -673,7 +673,7 @@ def try_generate_ai_video_clip(
         return False
 
     if result.returncode == 0 and _is_valid_mp4(out_mp4):
-        cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
+        cache.store(prompt, orientation, out_mp4, "video", variation="")
         print(f"Generated scene {idx} video with Hugging Face ZeroGPU.")
         return True
     if os.path.isfile(out_mp4):
@@ -1077,7 +1077,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
         return "", "none"
 
     cache = MediaAssetCache()
-    cached = cache.get(query, orientation, variation=JOB_ID)
+    cached = cache.get(query, orientation, variation="")
     if cached:
         cached_path, media_kind = cached
         relative_path = f"media/scene_{idx}_cached{cached_path.suffix}"
@@ -1094,7 +1094,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
     )
     if media_kind != "none" and relative_path:
         source = os.path.join("public", relative_path.replace("/", os.sep))
-        cache.store(query, orientation, source, media_kind, variation=JOB_ID)
+        cache.store(query, orientation, source, media_kind, variation="")
     return relative_path, media_kind
 
 
