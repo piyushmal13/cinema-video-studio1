@@ -52,6 +52,34 @@ class VisualQualityTests(unittest.TestCase):
         self.assertFalse(enforced["passed"])
         self.assertTrue(any("required minimum is 60%" in item for item in enforced["errors"]))
 
+    def test_media_coverage_counts_only_existing_nonempty_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "valid.jpg").write_bytes(b"valid image bytes")
+            (root / "empty.jpg").write_bytes(b"")
+            scenes = [
+                {"mediaKind": "image", "mediaFile": "valid.jpg"},
+                {"mediaKind": "image", "mediaFile": "missing.jpg"},
+                {"mediaKind": "image", "mediaFile": "empty.jpg"},
+                {"mediaMode": "graphic", "type": "kinetic_type"},
+            ]
+            report = audit_visual_plan(scenes, root, minimum_media_ratio=0.25, enforce_media_ratio=True)
+        self.assertEqual(report["media_backed_scenes"], 1)
+        self.assertEqual(report["media_coverage_ratio"], 0.25)
+        self.assertTrue(any("Scene media is missing" in warning for warning in report["warnings"]))
+
+    def test_missing_media_fails_enforced_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = audit_visual_plan(
+                [{"mediaKind": "image", "mediaFile": "missing.jpg"}],
+                directory,
+                minimum_media_ratio=0.60,
+                enforce_media_ratio=True,
+            )
+        self.assertFalse(report["passed"])
+        self.assertEqual(report["media_backed_scenes"], 0)
+        self.assertTrue(any("Media coverage is 0/1" in error for error in report["errors"]))
+
     def test_rejects_scene_media_path_traversal(self):
         report = audit_visual_plan(
             [{"mediaKind": "image", "mediaFile": "../outside.jpg"}], "."
