@@ -4,6 +4,7 @@ import html
 import json
 import math
 import os
+from pathlib import Path
 import random
 import re
 import shutil
@@ -74,6 +75,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 RAW_PROMPT = os.environ.get("PROMPT", "Create a cinematic short film on how AI is transforming global finance").strip()
 JOB_ID = os.environ.get("CINEMA_JOB_ID", "").strip() or str(time.time_ns())
 SCENE_MEDIA_FILES: dict[int, list[str]] = {}
+SCENE_MEDIA_ATTRIBUTION: dict[int, dict[str, str]] = {}
 
 os.makedirs("public/media", exist_ok=True)
 os.makedirs("out", exist_ok=True)
@@ -588,7 +590,7 @@ def try_generate_ai_video_clip(
         return False
     cache = MediaAssetCache()
     cached = cache.get(
-        prompt, orientation, expected_kind="video", variation=JOB_ID
+        prompt, orientation, expected_kind="video", variation=""
     )
     if cached:
         cached_path, _ = cached
@@ -612,7 +614,7 @@ def try_generate_ai_video_clip(
             if candidate.suffix.lower() == ".mp4" and _is_valid_mp4(str(candidate)):
                 shutil.copyfile(candidate, out_mp4)
                 if _is_valid_mp4(out_mp4):
-                    cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
+                    cache.store(prompt, orientation, out_mp4, "video", variation="")
                     print(f"Generated scene {idx} motion with configured ComfyUI.")
                     return True
     except Exception as error:
@@ -641,7 +643,7 @@ def try_generate_ai_video_clip(
             with open(out_mp4, "wb") as output_file:
                 output_file.write(response.content)
             if _is_valid_mp4(out_mp4):
-                cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
+                cache.store(prompt, orientation, out_mp4, "video", variation="")
                 print(f"Generated scene {idx} video with Pollinations.")
                 return True
         print(f"Pollinations video unavailable for scene {idx}: HTTP {response.status_code}.")
@@ -673,7 +675,7 @@ def try_generate_ai_video_clip(
         return False
 
     if result.returncode == 0 and _is_valid_mp4(out_mp4):
-        cache.store(prompt, orientation, out_mp4, "video", variation=JOB_ID)
+        cache.store(prompt, orientation, out_mp4, "video", variation="")
         print(f"Generated scene {idx} video with Hugging Face ZeroGPU.")
         return True
     if os.path.isfile(out_mp4):
@@ -711,7 +713,13 @@ def _matches_visual_subject(title: str, query: str) -> bool:
     if _REJECT_MEDIA_TERMS.search(title):
         return False
     terms = _visual_subject_terms(query)
-    return bool(terms) and any(term in title.lower() for term in terms)
+    title_text = re.sub(r"[^a-z0-9]+", " ", title.casefold())
+    matched = {
+        term for term in terms
+        if re.search(rf"\b{re.escape(term)}\b", title_text)
+    }
+    minimum_matches = 1 if len(terms) <= 2 else 2
+    return bool(terms) and len(matched) >= minimum_matches
 
 
 def _license_is_reusable(metadata: dict) -> bool:
@@ -729,8 +737,49 @@ def _license_is_reusable(metadata: dict) -> bool:
     return False
 
 
+def _request_with_retry(
+    url: str,
+    *,
+    attempts: int = 3,
+    retry_statuses: tuple[int, ...] = (408, 425, 429, 500, 502, 503, 504),
+    timeout: tuple[int, int] = (4, 10),
+    **kwargs,
+):
+    """GET with bounded retries for transient provider failures only."""
+    attempts = max(1, attempts)
+    for attempt in range(attempts):
+        try:
+            response = requests.get(url, timeout=timeout, **kwargs)
+        except requests.RequestException:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(min(4.0, 0.75 * (2 ** attempt)))
+            continue
+
+        if response.status_code in retry_statuses:
+            retry_after = response.headers.get("Retry-After", "")
+            try:
+                delay = min(8.0, max(0.0, float(retry_after)))
+            except (TypeError, ValueError):
+                delay = min(4.0, 0.75 * (2 ** attempt))
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            if attempt + 1 >= attempts:
+                response.raise_for_status()
+            time.sleep(delay)
+            continue
+
+        # Keep permanent HTTP failures outside the network-exception retry
+        # handler: 401/403/404 are not transient and should fail immediately.
+        response.raise_for_status()
+        return response
+
+    raise requests.RequestException("Provider request exhausted retry attempts.")
+
+
 def _download_bounded(url: str, output_path: str, maximum_bytes: int = 15 * 1024 * 1024) -> bool:
-    response = requests.get(
+    response = _request_with_retry(
         url,
         headers={"User-Agent": "CinemaVideoStudio/1.0 (public-domain media fetcher)"},
         stream=True,
@@ -797,11 +846,11 @@ def try_archive_org_video(
         return False
     search_terms = " OR ".join(f"title:{term} OR subject:{term}" for term in terms[:3])
     try:
-        response = requests.get(
+        response = _request_with_retry(
             "https://archive.org/advancedsearch.php",
             params={
                 "q": f"mediatype:movies AND ({search_terms})",
-                "fl[]": ["identifier"],
+                "fl[]": ["identifier", "title", "description", "subject"],
                 "rows": 5,
                 "page": 1,
                 "output": "json",
@@ -816,14 +865,22 @@ def try_archive_org_video(
             identifier = document.get("identifier", "")
             if not re.fullmatch(r"[A-Za-z0-9._-]{1,120}", identifier):
                 continue
-            metadata_response = requests.get(
+            metadata_response = _request_with_retry(
                 f"https://archive.org/metadata/{identifier}",
                 headers={"User-Agent": "CinemaVideoStudio/1.0"},
                 timeout=(4, 8),
             )
             metadata_response.raise_for_status()
             metadata = metadata_response.json()
-            if not _license_is_reusable(metadata.get("metadata", {})):
+            item_metadata = metadata.get("metadata", {})
+            searchable_metadata = " ".join(
+                str(item_metadata.get(field, ""))
+                for field in ("title", "description", "subject")
+            )
+            if not _matches_visual_subject(searchable_metadata, query):
+                print(f"Skipping Archive.org item without a strong topic match: {identifier}")
+                continue
+            if not _license_is_reusable(item_metadata):
                 continue
             candidates = [
                 entry for entry in metadata.get("files", [])
@@ -847,7 +904,7 @@ def try_archive_org_video(
 
 
 def _commons_pages(query: str, filetype: str, orientation: str = "landscape") -> dict:
-    response = requests.get(
+    response = _request_with_retry(
         "https://commons.wikimedia.org/w/api.php",
         params={
             "action": "query",
@@ -918,7 +975,7 @@ def _fetch_wikimedia_photo(query: str, idx: int, orientation: str) -> tuple[str,
         image_url = image_info.get("thumburl") or image_info.get("url")
         if not reusable or not image_url or image_url.lower().split("?")[0].endswith(".svg"):
             continue
-        image_response = requests.get(
+        image_response = _request_with_retry(
             image_url,
             headers={"User-Agent": "CinemaVideoStudio/1.0"},
             timeout=(4, 8),
@@ -936,6 +993,69 @@ def _fetch_wikimedia_photo(query: str, idx: int, orientation: str) -> tuple[str,
         with open(path, "wb") as image_file:
             image_file.write(image_response.content)
         print(f"Using Wikimedia Commons {license_name} photo for scene {idx}: {title}")
+        return relative_path, "image"
+    return "", "none"
+
+
+def try_openverse_photo(query: str, idx: int, orientation: str) -> tuple[str, str]:
+    """Fetch a strongly topic-matched CC0/PDM image from Openverse."""
+    if os.environ.get("CINEMA_OFFLINE") == "1":
+        return "", "none"
+    terms = _visual_subject_terms(query)
+    if not terms:
+        return "", "none"
+    response = _request_with_retry(
+        "https://api.openverse.org/v1/images/",
+        params={
+            "q": query[:200],
+            "license": "cc0,pdm",
+            "license_type": "commercial",
+            "page_size": 10,
+            "mature": "false",
+            "filter_dead": "true",
+        },
+        headers={"User-Agent": "CinemaVideoStudio/1.0 (open media search)"},
+        timeout=(5, 12),
+    )
+    results = response.json().get("results", [])
+    for item in results:
+        title = str(item.get("title", ""))
+        tags = item.get("tags", [])
+        tag_text = " ".join(
+            str(tag.get("name", "")) for tag in tags if isinstance(tag, dict)
+        )
+        if not _matches_visual_subject(f"{title} {tag_text}", query):
+            continue
+        license_name = str(item.get("license", "")).casefold()
+        if license_name not in {"cc0", "pdm"}:
+            continue
+        media_url = str(item.get("url", ""))
+        parsed = urllib.parse.urlparse(media_url)
+        if parsed.scheme != "https":
+            continue
+        extension = str(item.get("filetype", "")).lower().lstrip(".")
+        if extension not in {"jpg", "jpeg", "png", "webp"}:
+            extension = os.path.splitext(parsed.path)[1].lower().lstrip(".")
+        if extension not in {"jpg", "jpeg", "png", "webp"}:
+            continue
+        suffix = ".jpg" if extension == "jpeg" else f".{extension}"
+        relative_path = f"media/scene_{idx}_openverse{suffix}"
+        destination = os.path.join("public", relative_path.replace("/", os.sep))
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        if not _download_bounded(media_url, destination):
+            continue
+        if MediaAssetCache._asset_kind(Path(destination)) != "image":
+            Path(destination).unlink(missing_ok=True)
+            continue
+        SCENE_MEDIA_ATTRIBUTION[idx] = {
+            "title": title,
+            "creator": str(item.get("creator", "")),
+            "license": license_name,
+            "licenseUrl": str(item.get("license_url", "")),
+            "sourceUrl": str(item.get("foreign_landing_url", "")),
+            "provider": "Openverse",
+        }
+        print(f"Using Openverse {license_name} image for scene {idx}: {title}")
         return relative_path, "image"
     return "", "none"
 
@@ -999,7 +1119,7 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
             f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             f"?width={width}&height={height}&model=flux&nologo=true&seed={stable_visual_seed(JOB_ID, idx, query)}"
         )
-        response = requests.get(image_url, timeout=(5, 20))
+        response = _request_with_retry(image_url, timeout=(5, 20))
         content_type = response.headers.get("Content-Type", "").lower()
         if response.status_code == 200 and len(response.content) > 5000 and content_type.startswith("image/"):
             suffix = {
@@ -1019,6 +1139,13 @@ def _fetch_broll_or_ai_visual_uncached(query: str, idx: int, orientation: str):
         print(f"Flux image fallback on scene {idx}: {error}")
 
     try:
+        openverse_file, openverse_kind = try_openverse_photo(query, idx, orientation)
+        if openverse_file:
+            return openverse_file, openverse_kind
+    except (requests.RequestException, ValueError, TypeError, OSError) as error:
+        print(f"Openverse photo fallback on scene {idx}: {error}")
+
+    try:
         return _fetch_wikimedia_photo(query, idx, orientation)
     except (requests.RequestException, ValueError, TypeError, OSError) as error:
         print(f"Wikimedia Commons photo fallback on scene {idx}: {error}")
@@ -1030,7 +1157,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
         return "", "none"
 
     cache = MediaAssetCache()
-    cached = cache.get(query, orientation, variation=JOB_ID)
+    cached = cache.get(query, orientation, variation="")
     if cached:
         cached_path, media_kind = cached
         relative_path = f"media/scene_{idx}_cached{cached_path.suffix}"
@@ -1047,7 +1174,7 @@ def fetch_broll_or_ai_visual(query: str, idx: int, orientation: str):
     )
     if media_kind != "none" and relative_path:
         source = os.path.join("public", relative_path.replace("/", os.sep))
-        cache.store(query, orientation, source, media_kind, variation=JOB_ID)
+        cache.store(query, orientation, source, media_kind, variation="")
     return relative_path, media_kind
 
 
@@ -1612,6 +1739,7 @@ def main():
     scenes = diversify_scenes(storyboard.get("scenes", []))
     scenes = assign_visual_language(scenes, topic_kind, JOB_ID, orientation)
     SCENE_MEDIA_FILES.clear()
+    SCENE_MEDIA_ATTRIBUTION.clear()
     if not scenes:
         raise RuntimeError("Creative director returned no usable scenes.")
 
@@ -1691,6 +1819,8 @@ def main():
         scene["mediaFiles"] = SCENE_MEDIA_FILES.get(
             idx, [media_file] if media_file else []
         )
+        if idx in SCENE_MEDIA_ATTRIBUTION:
+            scene["mediaAttribution"] = SCENE_MEDIA_ATTRIBUTION[idx]
         scene["visualSeed"] = stable_visual_seed(JOB_ID, idx, query)
         timed_scenes.append(scene)
 

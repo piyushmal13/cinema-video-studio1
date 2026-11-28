@@ -19,6 +19,7 @@ class RenderQualityGateCliTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.count("  --video-data VIDEO_DATA"), 1)
+        self.assertIn("--minimum-media-ratio", result.stdout)
 
     def test_critical_storyboard_warning_is_not_overwritten_or_ignored(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -44,6 +45,3 @@ class RenderQualityGateCliTests(unittest.TestCase):
             self.assertEqual(result["plan"]["critical_warnings"], warnings)
             self.assertFalse(result["passed"])
 
-
-if __name__ == "__main__":
-    unittest.main()

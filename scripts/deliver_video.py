@@ -95,6 +95,35 @@ def _send_public_host_link(
     print("Video exceeded Telegram's limit; sent a temporary download link (48-hour expiry).")
 
 
+def _send_durable_download_link(
+    download_url: str,
+    bot_token: str,
+    chat_id: str,
+    post: Callable,
+    caption: str,
+) -> None:
+    parsed = urlparse(download_url)
+    if parsed.scheme != "https" or parsed.hostname != "github.com" or "/releases/download/" not in parsed.path:
+        raise ValueError("Durable download URL must be a GitHub Releases asset URL.")
+    message = ((caption.strip() + "\n\n") if caption.strip() else "") + (
+        "Your full-resolution video is ready for direct download (no temporary expiry):\n" + download_url
+    )
+    response = post(
+        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+        data={"chat_id": chat_id, "text": message},
+        timeout=(15, 30),
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Telegram rejected the download-link message (HTTP {response.status_code}).")
+    try:
+        result = response.json()
+    except ValueError:
+        result = {}
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        raise RuntimeError("Telegram did not confirm the download-link message.")
+    print("Delivered a durable GitHub Releases download link.")
+
+
 def deliver_video(
     video_path: str | Path,
     bot_token: str,
@@ -103,6 +132,7 @@ def deliver_video(
     post: Callable = requests.post,
     caption: str = "Your finished cinema film is ready.",
     thumbnail_path: str | Path | None = None,
+    download_url: str = "",
 ) -> None:
     source = Path(video_path)
     if not bot_token or not chat_id:
@@ -111,7 +141,10 @@ def deliver_video(
         raise FileNotFoundError(f"Rendered video is missing or empty: {source}")
 
     if source.stat().st_size > UPLOAD_TARGET_BYTES:
-        _send_public_host_link(source, bot_token, chat_id, post, caption)
+        if download_url:
+            _send_durable_download_link(download_url, bot_token, chat_id, post, caption)
+        else:
+            _send_public_host_link(source, bot_token, chat_id, post, caption)
         return
 
     url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
@@ -135,8 +168,11 @@ def deliver_video(
                 timeout=(15, 300),
             )
         except requests.RequestException:
-            print("Telegram video upload was interrupted; switching to a temporary download link.")
-            _send_public_host_link(source, bot_token, chat_id, post, caption)
+            print("Telegram video upload was interrupted; switching to download-link delivery.")
+            if download_url:
+                _send_durable_download_link(download_url, bot_token, chat_id, post, caption)
+            else:
+                _send_public_host_link(source, bot_token, chat_id, post, caption)
             return
 
     try:
@@ -148,7 +184,10 @@ def deliver_video(
         response.status_code >= 400
         and "request entity too large" in str(result).lower()
     ):
-        _send_public_host_link(source, bot_token, chat_id, post, caption)
+        if download_url:
+            _send_durable_download_link(download_url, bot_token, chat_id, post, caption)
+        else:
+            _send_public_host_link(source, bot_token, chat_id, post, caption)
         return
 
     if response.status_code >= 400:
@@ -190,6 +229,7 @@ def main() -> None:
         os.environ.get("CHAT_ID", ""),
         caption=caption,
         thumbnail_path=thumbnail if thumbnail.is_file() else None,
+        download_url=os.environ.get("CINEMA_DOWNLOAD_URL", "").strip(),
     )
 
 

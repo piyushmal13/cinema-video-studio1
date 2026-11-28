@@ -453,8 +453,78 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertFalse(generated)
         self.assertFalse(os.path.exists(output_path))
 
+    def test_provider_get_retries_rate_limit_then_succeeds(self):
+        limited = Mock(status_code=429, headers={"Retry-After": "1"})
+        success = Mock(status_code=200, headers={})
+        success.raise_for_status = Mock()
+        with (
+            patch.object(generate_assets.requests, "get", side_effect=[limited, success]) as get,
+            patch.object(generate_assets.time, "sleep") as sleep,
+        ):
+            result = generate_assets._request_with_retry("https://commons.wikimedia.org/w/api.php")
+        self.assertIs(result, success)
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once_with(1.0)
+
+    def test_provider_get_does_not_retry_permanent_not_found(self):
+        missing = Mock(status_code=404, headers={})
+        missing.raise_for_status.side_effect = generate_assets.requests.HTTPError("404")
+        with (
+            patch.object(generate_assets.requests, "get", return_value=missing) as get,
+            patch.object(generate_assets.time, "sleep") as sleep,
+            self.assertRaises(generate_assets.requests.HTTPError),
+        ):
+            generate_assets._request_with_retry("https://commons.wikimedia.org/missing")
+        get.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_openverse_fallback_accepts_only_topic_matched_cc0_or_pdm_media(self):
+        response = Mock()
+        response.json.return_value = {
+            "results": [
+                {
+                    "title": "Unrelated portrait",
+                    "tags": [{"name": "portrait"}],
+                    "license": "cc0",
+                    "url": "https://media.example/portrait.jpg",
+                    "filetype": "jpg",
+                },
+                {
+                    "title": "Gold bars in a secure vault",
+                    "tags": [{"name": "bullion"}, {"name": "finance"}],
+                    "license": "cc0",
+                    "url": "https://media.example/gold-vault.jpg",
+                    "filetype": "jpg",
+                    "creator": "Open Media Creator",
+                    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                    "foreign_landing_url": "https://example.org/gold-vault",
+                },
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            original_dir = os.getcwd()
+            os.chdir(directory)
+            try:
+                generate_assets.SCENE_MEDIA_ATTRIBUTION.clear()
+                with (
+                    patch.object(generate_assets, "_request_with_retry", return_value=response) as request,
+                    patch.object(
+                        generate_assets, "_download_bounded",
+                        side_effect=lambda url, path: (open(path, "wb").write(b"\xff\xd8\xff" + b"x" * 6000) > 0),
+                    ) as download,
+                ):
+                    result = generate_assets.try_openverse_photo("gold bars secure vault", 2, "vertical")
+                self.assertEqual(result, ("media/scene_2_openverse.jpg", "image"))
+                self.assertEqual(request.call_args.args[0], "https://api.openverse.org/v1/images/")
+                self.assertEqual(request.call_args.kwargs["params"]["license"], "cc0,pdm")
+                self.assertEqual(download.call_count, 1)
+                self.assertEqual(generate_assets.SCENE_MEDIA_ATTRIBUTION[2]["provider"], "Openverse")
+                self.assertEqual(generate_assets.SCENE_MEDIA_ATTRIBUTION[2]["license"], "cc0")
+            finally:
+                os.chdir(original_dir)
+
     def test_wikimedia_uses_only_topic_matched_public_domain_or_cc0_photos(self):
-        flux = Mock(status_code=503, content=b"", headers={"Content-Type": "text/plain"})
+        flux = Mock(status_code=503, content=b"", headers={"Content-Type": "text/plain", "Retry-After": "0"})
         pages = {
             "1": {
                 "title": "File:Gold bars in a vault.jpg",
@@ -484,7 +554,7 @@ class GenerateAssetsTests(unittest.TestCase):
                     patch.object(generate_assets, "_commons_pages", return_value=pages),
                     patch.object(generate_assets, "try_archive_org_video", return_value=False),
                     patch.object(generate_assets, "try_wikimedia_video", return_value=False),
-                    patch.object(generate_assets.requests, "get", side_effect=[flux, photo]),
+                    patch.object(generate_assets.requests, "get", side_effect=[flux, flux, flux, photo]),
                 ):
                     result = generate_assets.fetch_broll_or_ai_visual(
                         "gold bars in a vault", 1, "vertical"
@@ -501,6 +571,8 @@ class GenerateAssetsTests(unittest.TestCase):
         metadata = Mock()
         metadata.json.return_value = {
             "metadata": {
+                "title": "Gold market trading film",
+                "description": "Gold bars and gold market trading",
                 "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/"
             },
             "files": [{"name": "gold-market.mp4", "size": "1200000"}],
