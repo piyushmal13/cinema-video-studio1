@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Fail a production when the MP4 is invalid or OCR finds overlapping text boxes."""
+"""Fail a production when its MP4, storyboard, media or rendered text is unsafe."""
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -17,10 +18,17 @@ except ImportError:
     from visual_quality import audit_render, audit_visual_plan
 
 
+_PUNCTUATION_ONLY = re.compile(r"^[\W_]+$", re.UNICODE)
+
+
 def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.12) -> list[dict[str, Any]]:
+    """Detect substantial word-box overlap while ignoring punctuation noise."""
     words = []
     for row in rows:
-        if str(row.get("level", "")) != "5" or not str(row.get("text", "")).strip():
+        if str(row.get("level", "")) != "5":
+            continue
+        text = str(row.get("text", "")).strip()
+        if not text or _PUNCTUATION_ONLY.fullmatch(text):
             continue
         try:
             left, top = int(row["left"]), int(row["top"])
@@ -28,7 +36,7 @@ def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.12) -> li
         except (KeyError, TypeError, ValueError):
             continue
         if width > 0 and height > 0:
-            words.append((str(row["text"]).strip(), left, top, left + width, top + height))
+            words.append((text, left, top, left + width, top + height))
 
     collisions = []
     for index, first in enumerate(words):
@@ -41,7 +49,11 @@ def overlapping_boxes(rows: list[dict[str, Any]], threshold: float = 0.12) -> li
                 (second[3] - second[1]) * (second[4] - second[2]),
             )
             if smaller_area and intersection / smaller_area >= threshold:
-                collisions.append({"first": first[0], "second": second[0], "overlap_ratio": round(intersection / smaller_area, 3)})
+                collisions.append({
+                    "first": first[0],
+                    "second": second[0],
+                    "overlap_ratio": round(intersection / smaller_area, 3),
+                })
     return collisions
 
 
@@ -69,7 +81,7 @@ def inspect_text_collisions(video_path: str | Path, sample_fps: float = 1.0) -> 
             )
             if result.returncode != 0:
                 continue
-            rows = list(csv.DictReader(result.stdout.splitlines(), delimiter="\t"))
+            rows = list(csv.DictReader(result.stdout.splitlines(), delimiter="\\t"))
             for collision in overlapping_boxes(rows):
                 collisions.append({"frame": frame_path.name, **collision})
     return {
@@ -87,12 +99,25 @@ def main() -> int:
     parser.add_argument("--report", default="out/render_quality_report.json")
     parser.add_argument("--video-data", default="public/video_data.json")
     parser.add_argument("--ocr", action="store_true", help="Require OCR-based text-overlap inspection.")
+    parser.add_argument(
+        "--minimum-media-ratio",
+        type=float,
+        default=float(__import__("os").environ.get("CINEMA_MIN_MEDIA_RATIO", "0.60")),
+        help="Minimum fraction of scenes backed by an actual image/video asset (default: 0.60).",
+    )
     args = parser.parse_args()
+    if not 0.0 <= args.minimum_media_ratio <= 1.0:
+        parser.error("--minimum-media-ratio must be between 0 and 1.")
 
     report = {"render": audit_render(args.video)}
     try:
         video_data = json.loads(Path(args.video_data).read_text(encoding="utf-8"))
-        plan = audit_visual_plan(video_data.get("scenes", []), "public")
+        plan = audit_visual_plan(
+            video_data.get("scenes", []),
+            "public",
+            minimum_media_ratio=args.minimum_media_ratio,
+            enforce_media_ratio=True,
+        )
         critical_markers = (
             "Scene media is missing:",
             "Duplicate media files are reused",
@@ -104,13 +129,20 @@ def main() -> int:
             warning for warning in plan.get("warnings", [])
             if any(marker in warning for marker in critical_markers)
         ]
-        report["plan"] = {**plan, "critical_warnings": critical, "passed": bool(plan.get("passed")) and not critical}
+        report["plan"] = {
+            **plan,
+            "critical_warnings": critical,
+            "passed": bool(plan.get("passed")) and not critical,
+        }
     except (OSError, ValueError, TypeError) as error:
         report["plan"] = {"passed": False, "errors": [f"Could not inspect storyboard data: {error}"]}
+
     if args.ocr:
         report["text_overlap"] = inspect_text_collisions(args.video)
-    report["passed"] = bool(report["render"].get("passed")) and bool(report["plan"].get("passed")) and (
-        not args.ocr or bool(report["text_overlap"].get("passed"))
+    report["passed"] = (
+        bool(report["render"].get("passed"))
+        and bool(report["plan"].get("passed"))
+        and (not args.ocr or bool(report.get("text_overlap", {}).get("passed")))
     )
     target = Path(args.report)
     target.parent.mkdir(parents=True, exist_ok=True)
