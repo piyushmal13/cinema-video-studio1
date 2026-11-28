@@ -737,42 +737,36 @@ def _request_with_retry(
     timeout: tuple[int, int] = (4, 10),
     **kwargs,
 ):
-    """GET with bounded retries for transient provider failures only.
-
-    Honors a numeric Retry-After header, caps each wait, and never retries
-    permanent 4xx responses such as 401, 403 or 404.
-    """
-    last_error = None
-    for attempt in range(max(1, attempts)):
-        response = None
+    """GET with bounded retries for transient provider failures only."""
+    attempts = max(1, attempts)
+    for attempt in range(attempts):
         try:
             response = requests.get(url, timeout=timeout, **kwargs)
-            if response.status_code not in retry_statuses:
-                response.raise_for_status()
-                return response
+        except requests.RequestException:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(min(4.0, 0.75 * (2 ** attempt)))
+            continue
+
+        if response.status_code in retry_statuses:
             retry_after = response.headers.get("Retry-After", "")
             try:
                 delay = min(8.0, max(0.0, float(retry_after)))
             except (TypeError, ValueError):
                 delay = min(4.0, 0.75 * (2 ** attempt))
-            if attempt + 1 >= attempts:
-                response.raise_for_status()
             close = getattr(response, "close", None)
             if callable(close):
                 close()
-            time.sleep(delay)
-        except requests.RequestException as error:
-            last_error = error
             if attempt + 1 >= attempts:
-                raise
-            time.sleep(min(4.0, 0.75 * (2 ** attempt)))
-        finally:
-            if response is not None and attempt + 1 >= attempts:
-                close = getattr(response, "close", None)
-                if callable(close):
-                    close()
-    if last_error:
-        raise last_error
+                response.raise_for_status()
+            time.sleep(delay)
+            continue
+
+        # Keep permanent HTTP failures outside the network-exception retry
+        # handler: 401/403/404 are not transient and should fail immediately.
+        response.raise_for_status()
+        return response
+
     raise requests.RequestException("Provider request exhausted retry attempts.")
 
 
