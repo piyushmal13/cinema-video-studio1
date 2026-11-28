@@ -40,7 +40,10 @@ class VisualQualityTests(unittest.TestCase):
             {"mediaKind": "none", "mediaMode": "graphic"},
             {"mediaKind": "none", "mediaMode": "graphic"},
         ]
-        report = audit_visual_plan(scenes, ".", minimum_media_ratio=0.60)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.jpg").write_bytes(b"\\xff\\xd8\\xff" + b"verified jpeg fixture")
+            report = audit_visual_plan(scenes, root, minimum_media_ratio=0.60)
         self.assertEqual(report["media_backed_scenes"], 1)
         self.assertEqual(report["media_coverage_ratio"], 0.2)
         self.assertEqual(report["intentionally_graphic_scenes"], 4)
