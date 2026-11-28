@@ -714,7 +714,7 @@ def _matches_visual_subject(title: str, query: str) -> bool:
     title_text = re.sub(r"[^a-z0-9]+", " ", title.casefold())
     matched = {
         term for term in terms
-        if re.search(rf"\\b{re.escape(term)}\\b", title_text)
+        if re.search(rf"\b{re.escape(term)}\b", title_text)
     }
     minimum_matches = 1 if len(terms) <= 2 else 2
     return bool(terms) and len(matched) >= minimum_matches
