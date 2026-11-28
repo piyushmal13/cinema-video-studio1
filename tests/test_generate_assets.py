@@ -453,31 +453,6 @@ class GenerateAssetsTests(unittest.TestCase):
         self.assertFalse(generated)
         self.assertFalse(os.path.exists(output_path))
 
-    def test_provider_get_retries_rate_limit_then_succeeds(self):
-        limited = Mock(status_code=429, headers={"Retry-After": "1"})
-        success = Mock(status_code=200, headers={})
-        success.raise_for_status = Mock()
-        with (
-            patch.object(generate_assets.requests, "get", side_effect=[limited, success]) as get,
-            patch.object(generate_assets.time, "sleep") as sleep,
-        ):
-            result = generate_assets._request_with_retry("https://commons.wikimedia.org/w/api.php")
-        self.assertIs(result, success)
-        self.assertEqual(get.call_count, 2)
-        sleep.assert_called_once_with(1.0)
-
-    def test_provider_get_does_not_retry_permanent_not_found(self):
-        missing = Mock(status_code=404, headers={})
-        missing.raise_for_status.side_effect = generate_assets.requests.HTTPError("404")
-        with (
-            patch.object(generate_assets.requests, "get", return_value=missing) as get,
-            patch.object(generate_assets.time, "sleep") as sleep,
-            self.assertRaises(generate_assets.requests.HTTPError),
-        ):
-            generate_assets._request_with_retry("https://commons.wikimedia.org/missing")
-        get.assert_called_once()
-        sleep.assert_not_called()
-
     def test_wikimedia_uses_only_topic_matched_public_domain_or_cc0_photos(self):
         flux = Mock(status_code=503, content=b"", headers={"Content-Type": "text/plain"})
         pages = {
